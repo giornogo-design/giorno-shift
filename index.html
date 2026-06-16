@@ -477,14 +477,13 @@ function initApplyTab() {
 
 async function loadApplyData() {
   applyExisting = {}; applyShortage = {};
-  try {
-    const data = await gasGet({ action:'getShifts', lineId, month: applyMonth });
-    if (data.ok) data.shifts.filter(s=>s.storeId===applyStore.id).forEach(s => applyExisting[s.date]={start:s.start,end:s.end});
-  } catch(e) {}
-  try {
-    const sd = await gasGet({ action:'getShortage', storeId: applyStore.id, month: applyMonth });
-    if (sd.ok) applyShortage = sd.days;
-  } catch(e) {}
+  renderApplyCal(); // 枠を即表示（データは後から反映）
+  const [a, b] = await Promise.allSettled([
+    gasGet({ action:'getShifts',  lineId, month: applyMonth }),
+    gasGet({ action:'getShortage', storeId: applyStore.id, month: applyMonth }),
+  ]);
+  if (a.status==='fulfilled' && a.value.ok) a.value.shifts.filter(s=>s.storeId===applyStore.id).forEach(s => applyExisting[s.date]={start:s.start,end:s.end});
+  if (b.status==='fulfilled' && b.value.ok) applyShortage = b.value.days;
   renderApplyCal();
 }
 
@@ -662,6 +661,7 @@ function backToProxyStaffList() { document.getElementById('proxy-staff-select').
 
 async function loadProxyData() {
   proxyShortage = {};
+  renderProxyCal(); // 枠を即表示
   try {
     const sd = await gasGet({ action:'getShortage', storeId: proxyStore.id, month: proxyMonth });
     if (sd.ok) proxyShortage = sd.days;
@@ -748,6 +748,7 @@ function initDaysTab() {
 
 async function loadDaysData() {
   daysFixedOff = []; daysHolidays = new Set(); daysOpens = new Set();
+  renderDaysCal(); // 枠を即表示
   try {
     const data = await gasGet({ action:'getDayStatus', lineId, storeId: daysStore.id, month: daysMonth });
     if (data.ok) {
