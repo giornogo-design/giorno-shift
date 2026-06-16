@@ -58,6 +58,8 @@
   .cal-cell:nth-child(7n) .day-num { color: #3182ce; }
   .shift-dot { width: 6px; height: 6px; background: #06c755; border-radius: 50%; margin-top: 2px; }
   .shift-time-badge { font-size: 9px; color: #06c755; font-weight: bold; line-height: 1.2; text-align: center; }
+  .cal-cell.has-shift { background: #eef5ff; }
+  .shift-exist-badge { font-size: 9px; color: #3182ce; font-weight: bold; line-height: 1.2; text-align: center; white-space: pre; }
 
   /* 選択済みシフト一覧 */
   .selected-list { margin: 0 12px 12px; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
@@ -346,6 +348,7 @@ function renderCalendar() {
     if (isPast || isFuture)  cls += ' past';
     if (isToday)             cls += ' today';
     if (isSel)               cls += ' selected';
+    if (isExist && !isSel)   cls += ' has-shift';
 
     cell.className = cls;
 
@@ -355,9 +358,11 @@ function renderCalendar() {
     cell.appendChild(num);
 
     if (isExist && !isSel) {
-      const dot = document.createElement('div');
-      dot.className = 'shift-dot';
-      cell.appendChild(dot);
+      const badge = document.createElement('div');
+      badge.className = 'shift-exist-badge';
+      const e = existingShifts[key];
+      badge.textContent = e.start + '\n〜' + e.end;
+      cell.appendChild(badge);
     }
     if (isSel) {
       const badge = document.createElement('div');
@@ -393,6 +398,19 @@ function tapDate(month, day, key) {
     renderSelectedList();
     updateSubmitBtn();
     return;
+  }
+  // 確定シフトがある日：内容を確認 → 続けて追加も可能
+  if (existingShifts[key]) {
+    const DOW = ['日','月','火','水','木','金','土'];
+    const d   = new Date(currentYear, month - 1, day);
+    const e   = existingShifts[key];
+    const ok  = confirm(
+      `📅 ${month}/${day}（${DOW[d.getDay()]}）のシフト\n` +
+      `${currentStore.name}\n\n` +
+      `🕒 ${e.start} 〜 ${e.end}\n\n` +
+      `この日にもう一件 希望を追加しますか？`
+    );
+    if (!ok) return;
   }
   pendingDate = { month, day, key };
   openModal(month, day);
