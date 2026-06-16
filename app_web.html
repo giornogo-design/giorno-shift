@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>シフト申請</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #333; min-height: 100vh; }
+
+  #loading { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; gap: 16px; }
+  #loading .spinner { width: 40px; height: 40px; border: 4px solid #ddd; border-top-color: #06c755; border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #loading p { color: #666; font-size: 14px; }
+
+  #error-view { display: none; padding: 40px 24px; text-align: center; }
+  #error-view p { color: #e53e3e; font-size: 15px; line-height: 1.6; }
+
+  #app { display: none; }
+
+  /* ヘッダー */
+  .header { background: #06c755; color: white; padding: 16px; text-align: center; position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+  .header h1 { font-size: 18px; font-weight: bold; }
+  .header .sub { font-size: 12px; opacity: 0.85; margin-top: 2px; }
+
+  /* スタッフ情報 */
+  .staff-info { background: white; margin: 12px; border-radius: 12px; padding: 12px 16px; display: flex; align-items: center; gap: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+  .staff-avatar { width: 40px; height: 40px; background: #06c755; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 18px; flex-shrink: 0; }
+  .staff-name { font-weight: bold; font-size: 16px; }
+  .staff-stores { font-size: 12px; color: #888; margin-top: 2px; }
+
+  /* 店舗タブ */
+  .store-tabs { display: flex; margin: 0 12px; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
+  .store-tabs::-webkit-scrollbar { display: none; }
+  .store-tab { flex-shrink: 0; padding: 8px 16px; border-radius: 20px; border: 2px solid #ddd; background: white; font-size: 13px; cursor: pointer; transition: all 0.2s; }
+  .store-tab.active { background: #06c755; border-color: #06c755; color: white; font-weight: bold; }
+
+  /* カレンダー */
+  .calendar-wrap { margin: 12px; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+  .cal-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #eee; }
+  .cal-header .month-label { font-size: 16px; font-weight: bold; }
+  .cal-nav { width: 36px; height: 36px; border: none; background: #f0f0f0; border-radius: 50%; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .cal-nav:disabled { opacity: 0.3; cursor: default; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+  .cal-dow { text-align: center; padding: 8px 0; font-size: 11px; color: #888; font-weight: bold; border-bottom: 1px solid #eee; }
+  .cal-dow:first-child { color: #e53e3e; }
+  .cal-dow:last-child { color: #3182ce; }
+  .cal-cell { position: relative; aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding-top: 4px; cursor: pointer; border-bottom: 1px solid #f5f5f5; border-right: 1px solid #f5f5f5; transition: background 0.15s; }
+  .cal-cell:nth-child(7n) { border-right: none; }
+  .cal-cell.empty { cursor: default; background: #fafafa; }
+  .cal-cell.past { opacity: 0.35; cursor: not-allowed; }
+  .cal-cell.holiday { background: #fff5f5; }
+  .cal-cell.selected { background: #e8faf0; }
+  .cal-cell.today .day-num { background: #06c755; color: white; border-radius: 50%; }
+  .day-num { font-size: 13px; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; }
+  .cal-cell:nth-child(7n+1) .day-num { color: #e53e3e; }
+  .cal-cell:nth-child(7n) .day-num { color: #3182ce; }
+  .shift-dot { width: 6px; height: 6px; background: #06c755; border-radius: 50%; margin-top: 2px; }
+  .shift-time-badge { font-size: 9px; color: #06c755; font-weight: bold; line-height: 1.2; text-align: center; }
+
+  /* 選択済みシフト一覧 */
+  .selected-list { margin: 0 12px 12px; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+  .selected-list .section-title { padding: 12px 16px; font-weight: bold; font-size: 14px; color: #555; border-bottom: 1px solid #eee; background: #fafafa; }
+  .selected-item { display: flex; align-items: center; padding: 10px 16px; border-bottom: 1px solid #f5f5f5; gap: 10px; }
+  .selected-item:last-child { border-bottom: none; }
+  .selected-date { font-weight: bold; font-size: 14px; min-width: 52px; }
+  .selected-time { font-size: 13px; color: #555; flex: 1; }
+  .selected-del { width: 28px; height: 28px; background: #fff0f0; border: none; border-radius: 50%; color: #e53e3e; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .empty-state { padding: 20px 16px; text-align: center; color: #aaa; font-size: 13px; }
+
+  /* 送信ボタン */
+  .submit-wrap { padding: 12px; }
+  .btn-submit { width: 100%; padding: 16px; background: #06c755; color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 12px rgba(6,199,85,0.4); transition: all 0.2s; }
+  .btn-submit:active { transform: scale(0.98); }
+  .btn-submit:disabled { background: #ccc; box-shadow: none; cursor: not-allowed; }
+
+  /* 時間入力モーダル */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; display: flex; align-items: flex-end; opacity: 0; pointer-events: none; transition: opacity 0.2s; }
+  .modal-overlay.show { opacity: 1; pointer-events: all; }
+  .modal { background: white; border-radius: 24px 24px 0 0; padding: 24px; width: 100%; max-height: 85vh; overflow-y: auto; transform: translateY(100%); transition: transform 0.3s; }
+  .modal-overlay.show .modal { transform: translateY(0); }
+  .modal-title { font-size: 17px; font-weight: bold; text-align: center; margin-bottom: 4px; }
+  .modal-sub { font-size: 13px; color: #888; text-align: center; margin-bottom: 20px; }
+  .time-section { margin-bottom: 16px; }
+  .time-label { font-size: 12px; color: #888; font-weight: bold; margin-bottom: 8px; }
+  .time-presets { display: flex; flex-wrap: wrap; gap: 8px; }
+  .time-btn { padding: 8px 14px; border: 2px solid #e2e8f0; border-radius: 20px; background: white; font-size: 14px; cursor: pointer; transition: all 0.2s; }
+  .time-btn.selected { border-color: #06c755; background: #e8faf0; color: #059c43; font-weight: bold; }
+  .time-custom { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .time-custom input { flex: 1; padding: 10px; border: 2px solid #e2e8f0; border-radius: 10px; font-size: 16px; text-align: center; outline: none; }
+  .time-custom input:focus { border-color: #06c755; }
+  .modal-divider { border: none; border-top: 1px solid #eee; margin: 16px 0; }
+  .btn-confirm { width: 100%; padding: 14px; background: #06c755; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: bold; cursor: pointer; margin-top: 8px; }
+  .btn-cancel { width: 100%; padding: 12px; background: #f5f5f5; color: #555; border: none; border-radius: 12px; font-size: 15px; cursor: pointer; margin-top: 8px; }
+
+  /* 完了画面 */
+  #done-view { display: none; padding: 60px 24px; text-align: center; }
+  #done-view .check { font-size: 64px; margin-bottom: 16px; }
+  #done-view h2 { font-size: 22px; font-weight: bold; margin-bottom: 8px; }
+  #done-view p { color: #666; font-size: 14px; line-height: 1.7; }
+  #done-view .btn-back { margin-top: 32px; padding: 14px 32px; background: #06c755; color: white; border: none; border-radius: 24px; font-size: 16px; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <p>読み込み中...</p>
+</div>
+
+<div id="error-view">
+  <p id="error-msg"></p>
+</div>
+
+<div id="app">
+  <div class="header">
+    <h1>📅 シフト申請</h1>
+    <div class="sub" id="header-sub">希望日を選んでください</div>
+  </div>
+
+  <div class="staff-info">
+    <div class="staff-avatar">👤</div>
+    <div>
+      <div class="staff-name" id="staff-name-label"></div>
+      <div class="staff-stores" id="staff-stores-label"></div>
+    </div>
+  </div>
+
+  <div class="store-tabs" id="store-tabs"></div>
+
+  <div class="calendar-wrap">
+    <div class="cal-header">
+      <button class="cal-nav" id="prev-month">‹</button>
+      <div class="month-label" id="month-label"></div>
+      <button class="cal-nav" id="next-month">›</button>
+    </div>
+    <div class="cal-grid" id="cal-grid">
+      <div class="cal-dow">日</div>
+      <div class="cal-dow">月</div>
+      <div class="cal-dow">火</div>
+      <div class="cal-dow">水</div>
+      <div class="cal-dow">木</div>
+      <div class="cal-dow">金</div>
+      <div class="cal-dow">土</div>
+    </div>
+  </div>
+
+  <div class="selected-list">
+    <div class="section-title">✅ 選択済みシフト</div>
+    <div id="selected-items">
+      <div class="empty-state">日付をタップして追加してください</div>
+    </div>
+  </div>
+
+  <div class="submit-wrap">
+    <button class="btn-submit" id="btn-submit" disabled>送信する（0件）</button>
+  </div>
+</div>
+
+<!-- 時間入力モーダル -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <div class="modal-title" id="modal-title"></div>
+    <div class="modal-sub" id="modal-sub"></div>
+
+    <div class="time-section">
+      <div class="time-label">▶ 開始時間</div>
+      <div class="time-presets" id="start-presets"></div>
+      <div class="time-custom">
+        <span style="font-size:13px;color:#888;">その他:</span>
+        <input type="time" id="start-custom" placeholder="例: 18:00">
+      </div>
+    </div>
+
+    <hr class="modal-divider">
+
+    <div class="time-section">
+      <div class="time-label">▶ 終了時間</div>
+      <div class="time-presets" id="end-presets"></div>
+      <div class="time-custom">
+        <span style="font-size:13px;color:#888;">その他:</span>
+        <input type="time" id="end-custom" placeholder="例: 24:00">
+      </div>
+    </div>
+
+    <button class="btn-confirm" id="btn-confirm-time">この時間で追加</button>
+    <button class="btn-cancel" id="btn-cancel-modal">キャンセル</button>
+  </div>
+</div>
+
+<div id="done-view">
+  <div class="check">✅</div>
+  <h2>送信完了！</h2>
+  <p id="done-msg"></p>
+  <button class="btn-back" onclick="backToCalendar()">続けて申請する</button>
+</div>
+
+<script>
+// ============================================================
+// 設定
+// ============================================================
+const LIFF_ID   = '2010395925-vZipKUhV';
+const GAS_URL   = 'https://script.google.com/macros/s/AKfycbx-aqsCqJuKL1F-eClOgwiZfmIQDfvyVHWXxA8AQJjk5o4TAabhxKQoKTaO9NrOUcec/exec';
+
+// ============================================================
+// 状態
+// ============================================================
+let staffData   = null;   // { name, stores: [{id,name,open,close}] }
+let lineId      = null;
+let currentStore = null;  // { id, name, open, close }
+let currentMonth = new Date().getMonth() + 1;
+let currentYear  = new Date().getFullYear();
+let selected    = {};     // key: "M/D", value: { month, day, start, end, storeId }
+let existingShifts = {};  // key: "M/D", value: { start, end }
+let pendingDate = null;   // タップ中の日付
+
+// 時間プリセット
+const START_PRESETS = ['17:00','17:30','18:00','18:30','19:00','20:00'];
+const END_PRESETS   = ['21:00','22:00','23:00','24:00','25:00','26:00','27:00'];
+
+// ============================================================
+// 初期化
+// ============================================================
+async function init() {
+  try {
+    await liff.init({ liffId: LIFF_ID });
+    if (!liff.isLoggedIn()) { liff.login(); return; }
+    const profile = await liff.getProfile();
+    lineId = profile.userId;
+    const res = await fetch(`${GAS_URL}?action=getStaff&lineId=${lineId}`);
+    const data = await res.json();
+    if (!data.ok) { showError(data.error); return; }
+    staffData = data;
+    setupUI();
+  } catch(e) {
+    showError('読み込みに失敗しました。LINEアプリを再起動して試してください。\n\n' + e.message);
+  }
+}
+
+function showError(msg) {
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('error-view').style.display = 'block';
+  document.getElementById('error-msg').textContent = msg;
+}
+
+function setupUI() {
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('staff-name-label').textContent = staffData.name + 'さん';
+  document.getElementById('staff-stores-label').textContent = '担当: ' + staffData.stores.map(s => s.name).join(' / ');
+
+  // 店舗タブ
+  const tabs = document.getElementById('store-tabs');
+  staffData.stores.forEach((store, i) => {
+    const tab = document.createElement('button');
+    tab.className = 'store-tab' + (i === 0 ? ' active' : '');
+    tab.textContent = store.name;
+    tab.onclick = () => selectStore(store, tab);
+    tabs.appendChild(tab);
+  });
+  selectStore(staffData.stores[0], tabs.firstChild);
+
+  // ナビゲーション
+  document.getElementById('prev-month').onclick = () => changeMonth(-1);
+  document.getElementById('next-month').onclick = () => changeMonth(1);
+  document.getElementById('btn-submit').onclick = submitShifts;
+  document.getElementById('btn-confirm-time').onclick = confirmTime;
+  document.getElementById('btn-cancel-modal').onclick = closeModal;
+
+  // カスタム時間入力でプリセット解除
+  document.getElementById('start-custom').oninput = () => clearPresetSelection('start');
+  document.getElementById('end-custom').oninput   = () => clearPresetSelection('end');
+
+  renderCalendar();
+  loadExistingShifts();
+}
+
+async function selectStore(store, tabEl) {
+  currentStore = store;
+  document.querySelectorAll('.store-tab').forEach(t => t.classList.remove('active'));
+  tabEl.classList.add('active');
+  document.getElementById('header-sub').textContent = store.name + 'のシフトを選択中';
+  await loadExistingShifts();
+  renderCalendar();
+}
+
+// ============================================================
+// 既存シフト読み込み
+// ============================================================
+async function loadExistingShifts() {
+  if (!currentStore) return;
+  existingShifts = {};
+  try {
+    const res = await fetch(`${GAS_URL}?action=getShifts&lineId=${lineId}&month=${currentMonth}`);
+    const data = await res.json();
+    if (!data.ok) return;
+    data.shifts.filter(s => s.storeId === currentStore.id).forEach(s => {
+      existingShifts[s.date] = { start: s.start, end: s.end };
+    });
+  } catch(e) {}
+  renderCalendar();
+}
+
+// ============================================================
+// カレンダー描画
+// ============================================================
+function renderCalendar() {
+  document.getElementById('month-label').textContent = `${currentYear}年${currentMonth}月`;
+
+  const today    = new Date();
+  today.setHours(0,0,0,0);
+  const maxDate  = new Date(today.getTime() + 62 * 24 * 60 * 60 * 1000);
+  const firstDay = new Date(currentYear, currentMonth - 1, 1).getDay();
+  const lastDay  = new Date(currentYear, currentMonth, 0).getDate();
+
+  // ナビ制御
+  const prevBtn = document.getElementById('prev-month');
+  const thisFirst = new Date(currentYear, currentMonth - 1, 1);
+  const todayFirst = new Date(today.getFullYear(), today.getMonth(), 1);
+  prevBtn.disabled = thisFirst <= todayFirst;
+
+  // 既存セルを削除（曜日ヘッダーは7つ残す）
+  const grid = document.getElementById('cal-grid');
+  while (grid.children.length > 7) grid.removeChild(grid.lastChild);
+
+  // 空白セル
+  for (let i = 0; i < firstDay; i++) {
+    const cell = document.createElement('div');
+    cell.className = 'cal-cell empty';
+    grid.appendChild(cell);
+  }
+
+  // 日付セル
+  for (let d = 1; d <= lastDay; d++) {
+    const date   = new Date(currentYear, currentMonth - 1, d);
+    const key    = `${currentMonth}/${d}`;
+    const isToday  = date.getTime() === today.getTime();
+    const isPast   = date < today;
+    const isFuture = date > maxDate;
+    const isSel    = !!(selected[key] && selected[key].storeId === currentStore?.id);
+    const isExist  = !!existingShifts[key];
+
+    const cell = document.createElement('div');
+    let cls = 'cal-cell';
+    if (isPast || isFuture)  cls += ' past';
+    if (isToday)             cls += ' today';
+    if (isSel)               cls += ' selected';
+
+    cell.className = cls;
+
+    const num = document.createElement('div');
+    num.className = 'day-num';
+    num.textContent = d;
+    cell.appendChild(num);
+
+    if (isExist && !isSel) {
+      const dot = document.createElement('div');
+      dot.className = 'shift-dot';
+      cell.appendChild(dot);
+    }
+    if (isSel) {
+      const badge = document.createElement('div');
+      badge.className = 'shift-time-badge';
+      const s = selected[key];
+      badge.textContent = s.start + '\n〜' + s.end;
+      cell.appendChild(badge);
+    }
+
+    if (!isPast && !isFuture) {
+      cell.onclick = () => tapDate(currentMonth, d, key);
+    }
+    grid.appendChild(cell);
+  }
+}
+
+function changeMonth(dir) {
+  currentMonth += dir;
+  if (currentMonth > 12) { currentMonth = 1; currentYear++; }
+  if (currentMonth < 1)  { currentMonth = 12; currentYear--; }
+  loadExistingShifts();
+}
+
+// ============================================================
+// 日付タップ
+// ============================================================
+function tapDate(month, day, key) {
+  if (!currentStore) return;
+  if (selected[key] && selected[key].storeId === currentStore.id) {
+    // 選択解除
+    delete selected[key];
+    renderCalendar();
+    renderSelectedList();
+    updateSubmitBtn();
+    return;
+  }
+  pendingDate = { month, day, key };
+  openModal(month, day);
+}
+
+// ============================================================
+// モーダル
+// ============================================================
+function openModal(month, day) {
+  const DOW = ['日','月','火','水','木','金','土'];
+  const d   = new Date(currentYear, month - 1, day);
+  document.getElementById('modal-title').textContent = `${month}/${day}（${DOW[d.getDay()]}）のシフト`;
+  document.getElementById('modal-sub').textContent   = currentStore.name + ' ' + (currentStore.open || '') + '〜' + (currentStore.close || '');
+
+  buildPresets('start', START_PRESETS, currentStore.open  || '18:00');
+  buildPresets('end',   END_PRESETS,   currentStore.close || '24:00');
+  document.getElementById('start-custom').value = '';
+  document.getElementById('end-custom').value   = '';
+
+  document.getElementById('modal').classList.add('show');
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('show');
+  pendingDate = null;
+}
+
+function buildPresets(type, times, defaultTime) {
+  const container = document.getElementById(`${type}-presets`);
+  container.innerHTML = '';
+  times.forEach(t => {
+    const btn = document.createElement('button');
+    btn.className = 'time-btn' + (t === defaultTime ? ' selected' : '');
+    btn.textContent = t;
+    btn.dataset.time = t;
+    btn.onclick = () => selectPreset(type, btn);
+    container.appendChild(btn);
+  });
+}
+
+function selectPreset(type, btn) {
+  document.querySelectorAll(`#${type}-presets .time-btn`).forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  document.getElementById(`${type}-custom`).value = '';
+}
+
+function clearPresetSelection(type) {
+  document.querySelectorAll(`#${type}-presets .time-btn`).forEach(b => b.classList.remove('selected'));
+}
+
+function getSelectedTime(type) {
+  const custom = document.getElementById(`${type}-custom`).value.trim();
+  if (custom) return custom;
+  const selected = document.querySelector(`#${type}-presets .time-btn.selected`);
+  return selected ? selected.dataset.time : null;
+}
+
+function confirmTime() {
+  const start = getSelectedTime('start');
+  const end   = getSelectedTime('end');
+  if (!start) { alert('開始時間を選んでください'); return; }
+  if (!end)   { alert('終了時間を選んでください'); return; }
+
+  const { month, day, key } = pendingDate;
+  selected[key] = { month, day, start, end, storeId: currentStore.id };
+  closeModal();
+  renderCalendar();
+  renderSelectedList();
+  updateSubmitBtn();
+}
+
+// ============================================================
+// 選択リスト
+// ============================================================
+const DOW_JP = ['日','月','火','水','木','金','土'];
+
+function renderSelectedList() {
+  const container = document.getElementById('selected-items');
+  const items = Object.values(selected).filter(s => s.storeId === currentStore?.id)
+    .sort((a,b) => a.month !== b.month ? a.month - b.month : a.day - b.day);
+
+  if (!items.length) {
+    container.innerHTML = '<div class="empty-state">日付をタップして追加してください</div>';
+    return;
+  }
+
+  container.innerHTML = '';
+  items.forEach(s => {
+    const key = `${s.month}/${s.day}`;
+    const d   = new Date(currentYear, s.month - 1, s.day);
+    const row = document.createElement('div');
+    row.className = 'selected-item';
+    row.innerHTML = `
+      <div class="selected-date">${s.month}/${s.day}（${DOW_JP[d.getDay()]}）</div>
+      <div class="selected-time">${s.start} 〜 ${s.end}</div>
+      <button class="selected-del" onclick="removeSelected('${key}')">✕</button>
+    `;
+    container.appendChild(row);
+  });
+}
+
+function removeSelected(key) {
+  delete selected[key];
+  renderCalendar();
+  renderSelectedList();
+  updateSubmitBtn();
+}
+
+function updateSubmitBtn() {
+  const items = Object.values(selected).filter(s => s.storeId === currentStore?.id);
+  const btn = document.getElementById('btn-submit');
+  btn.disabled = items.length === 0;
+  btn.textContent = `送信する（${items.length}件）`;
+}
+
+// ============================================================
+// 送信
+// ============================================================
+async function submitShifts() {
+  const items = Object.values(selected).filter(s => s.storeId === currentStore?.id);
+  if (!items.length) return;
+
+  const btn = document.getElementById('btn-submit');
+  btn.disabled = true;
+  btn.textContent = '送信中...';
+
+  try {
+    const params = new URLSearchParams({
+      action:  'saveShift',
+      lineId:  lineId,
+      storeId: currentStore.id,
+      shifts:  JSON.stringify(items),
+    });
+    const res  = await fetch(`${GAS_URL}?${params}`);
+    const data = await res.json();
+
+    document.getElementById('app').style.display  = 'none';
+    document.getElementById('done-view').style.display = 'block';
+
+    let msg = `${currentStore.name}\n\n`;
+    if (data.saved && data.saved.length) {
+      msg += `✅ ${data.saved.join('、')} を登録しました！\n`;
+    }
+    if (data.errors && data.errors.length) {
+      msg += `\n⚠️ 以下はスキップされました：\n${data.errors.join('\n')}`;
+    }
+    document.getElementById('done-msg').textContent = msg;
+
+    // 送信済みを削除
+    items.forEach(s => delete selected[`${s.month}/${s.day}`]);
+  } catch(e) {
+    alert('送信に失敗しました。もう一度試してください。');
+    btn.disabled = false;
+    updateSubmitBtn();
+  }
+}
+
+function backToCalendar() {
+  document.getElementById('done-view').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  renderCalendar();
+  renderSelectedList();
+  updateSubmitBtn();
+  loadExistingShifts();
+}
+
+// ============================================================
+// 起動
+// ============================================================
+init();
+</script>
+</body>
+</html>
