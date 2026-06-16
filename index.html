@@ -15,6 +15,11 @@ body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #33
 @keyframes spin { to { transform: rotate(360deg); } }
 #loading p { color: #666; font-size: 14px; }
 
+/* 通信中インジケータ（データ取得のたびに表示） */
+#net-indicator { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.78); color: #fff; padding: 7px 16px; border-radius: 18px; font-size: 12px; z-index: 90; display: none; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.25); }
+#net-indicator.show { display: flex; }
+.mini-spin { width: 13px; height: 13px; border: 2px solid rgba(255,255,255,0.35); border-top-color: #fff; border-radius: 50%; animation: spin 0.8s linear infinite; }
+
 /* エラー */
 #error-view { display: none; padding: 40px 20px; text-align: center; }
 #error-msg { color: #e53e3e; font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
@@ -58,6 +63,7 @@ body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #33
 .cal-cell.past, .cal-cell.oor { opacity: 0.35; cursor: not-allowed; }
 .cal-cell.selected { background: #e8faf0; }
 .cal-cell.has-shift { background: #eef5ff; }
+.cal-cell.pending { background: #e8faf0; }
 .cal-cell.short { background: #fff3e0; }
 .cal-cell.today .day-num { background: #06c755; color: white; border-radius: 50%; }
 .day-num { font-size: 13px; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; }
@@ -65,6 +71,7 @@ body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #33
 .cal-cell:nth-child(7n)   .day-num { color: #3182ce; }
 .shift-badge { font-size: 9px; color: #059c43; font-weight: bold; line-height: 1.1; text-align: center; }
 .shift-exist-badge { font-size: 9px; color: #3182ce; font-weight: bold; line-height: 1.2; text-align: center; white-space: pre; }
+.shift-pending-badge { font-size: 9px; color: #059c43; font-weight: bold; line-height: 1.2; text-align: center; white-space: pre; }
 .short-badge { font-size: 8px; color: #e67e22; font-weight: bold; line-height: 1.2; text-align: center; margin-top: 1px; }
 .cal-cell.dayoff { background: #f0f0f0; }
 .cal-cell.dholiday { background: #ffebee; }
@@ -126,6 +133,24 @@ body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #33
 #done-view p { color: #666; font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
 .btn-back { margin-top: 24px; padding: 13px 32px; background: #06c755; color: white; border: none; border-radius: 24px; font-size: 15px; cursor: pointer; }
 
+/* 確定タブ */
+.cal-cell.has-pending { background: #fff8e1; }
+.cal-cell.all-conf { background: #eef5ff; }
+.confirm-badge { font-size: 9px; font-weight: bold; line-height: 1.25; text-align: center; }
+.confirm-badge .pend { color: #e67e22; }
+.confirm-badge .conf { color: #3182ce; }
+.cf-row { display: flex; align-items: center; gap: 10px; padding: 12px 2px; border-bottom: 1px solid #f0f0f0; }
+.cf-row:last-child { border-bottom: none; }
+.cf-check { width: 22px; height: 22px; flex-shrink: 0; accent-color: #06c755; }
+.cf-info { flex: 1; }
+.cf-name { font-weight: bold; font-size: 15px; }
+.cf-time { font-size: 13px; color: #555; margin-top: 2px; }
+.cf-chip { font-size: 10px; padding: 3px 9px; border-radius: 10px; font-weight: bold; flex-shrink: 0; }
+.cf-chip.pend { background: #fff3e0; color: #e67e22; }
+.cf-chip.conf { background: #eef5ff; color: #3182ce; }
+.cf-tools { display: flex; gap: 8px; margin: 4px 0 12px; }
+.cf-tool-btn { flex: 1; padding: 9px; border: 2px solid #e2e8f0; background: white; border-radius: 10px; font-size: 13px; cursor: pointer; }
+
 /* モーダル */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; display: flex; align-items: flex-end; opacity: 0; pointer-events: none; transition: opacity 0.2s; }
 .modal-overlay.show { opacity: 1; pointer-events: all; }
@@ -149,6 +174,7 @@ body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #33
 <body>
 
 <div id="loading"><div class="spinner"></div><p>読み込み中...</p></div>
+<div id="net-indicator"><span class="mini-spin"></span><span>読み込み中...</span></div>
 <div id="error-view"><p id="error-msg"></p><button class="btn-back" onclick="retryLogin()" style="margin-top:20px">再読み込み</button></div>
 
 <div id="app" style="display:none">
@@ -271,6 +297,30 @@ body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #33
       ・設定済みの日 → 元に戻す
     </div>
   </div>
+
+  <!-- ⑤ 確定タブ（管理者） -->
+  <div id="tab-confirm" style="display:none">
+    <div class="store-tabs" id="store-tabs-confirm"></div>
+    <div class="cal-wrap">
+      <div class="cal-header">
+        <button class="cal-nav" id="confirm-prev">‹</button>
+        <div class="month-lbl" id="confirm-month-lbl"></div>
+        <button class="cal-nav" id="confirm-next">›</button>
+      </div>
+      <div class="cal-grid" id="confirm-grid">
+        <div class="cal-dow">日</div><div class="cal-dow">月</div><div class="cal-dow">火</div>
+        <div class="cal-dow">水</div><div class="cal-dow">木</div><div class="cal-dow">金</div><div class="cal-dow">土</div>
+      </div>
+      <div class="legend">
+        <span><span class="dot" style="background:#fff8e1;border:1px solid #e67e22"></span>申請中あり</span>
+        <span><span class="dot" style="background:#eef5ff;border:1px solid #3182ce"></span>全員確定済み</span>
+      </div>
+    </div>
+    <div style="margin:0 12px 16px;padding:14px 16px;background:white;border-radius:12px;font-size:12px;color:#777;line-height:1.8;box-shadow:0 1px 4px rgba(0,0,0,0.08)">
+      日付をタップ → その日の申請を確認し、確定したい人を選んで「確定」してください。<br>
+      確定すると本人にLINEで通知が届きます。
+    </div>
+  </div>
 </div>
 
 <!-- 完了画面 -->
@@ -295,6 +345,9 @@ body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #33
   <button class="nav-btn" id="nav-days" onclick="switchTab('days')" style="display:none">
     <span class="icon">🗓</span>営業日
   </button>
+  <button class="nav-btn" id="nav-confirm" onclick="switchTab('confirm')" style="display:none">
+    <span class="icon">✅</span>確定
+  </button>
 </nav>
 
 <!-- 時間入力モーダル -->
@@ -315,6 +368,21 @@ body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #33
     </div>
     <button class="btn-confirm" id="modal-confirm">この時間で追加</button>
     <button class="btn-cancel"  id="modal-cancel">キャンセル</button>
+  </div>
+</div>
+
+<!-- 確定モーダル（管理者） -->
+<div class="modal-overlay" id="confirm-modal">
+  <div class="modal">
+    <div class="modal-title" id="confirm-modal-title"></div>
+    <div class="modal-sub" id="confirm-modal-sub"></div>
+    <div class="cf-tools">
+      <button class="cf-tool-btn" onclick="cfSelectAll(true)">申請中をすべて選択</button>
+      <button class="cf-tool-btn" onclick="cfSelectAll(false)">選択を解除</button>
+    </div>
+    <div id="confirm-modal-list"></div>
+    <button class="btn-confirm" id="confirm-modal-do">選択した0件を確定</button>
+    <button class="btn-cancel"  id="confirm-modal-cancel">閉じる</button>
   </div>
 </div>
 
@@ -346,10 +414,20 @@ const LIFF_ID       = '2010395925-JfheOL3d';
 const GAS_URL       = 'https://script.google.com/macros/s/AKfycbx-aqsCqJuKL1F-eClOgwiZfmIQDfvyVHWXxA8AQJjk5o4TAabhxKQoKTaO9NrOUcec/exec';
 const DOW           = ['日','月','火','水','木','金','土'];
 const START_PRESETS = ['17:00','17:30','18:00','18:30','19:00','20:00'];
+// 店舗別の開始時間プリセット（片町店は19:00開始 / 刻は16:30開始）
+const STORE_START_PRESETS = {
+  S001:['19:00','19:30','20:00','20:30','21:00','22:00'],
+  S003:['16:30','17:00','17:30','18:00','18:30','19:00'],
+};
+function startPresetsFor(storeId) { return STORE_START_PRESETS[storeId] || START_PRESETS; }
 const END_PRESETS   = ['21:00','22:00','23:00','24:00','25:00','26:00','27:00'];
 const STORE_NAME    = { S001:'片町店', S002:'駅前店', S003:'刻' };
 const STORE_OPEN    = { S001:'19:00', S002:'18:00', S003:'16:30' };
 const STORE_CLOSE   = { S001:'04:00', S002:'01:00', S003:'23:00' };
+// 「ラスト」を押したときに入る時刻（片付け後に退勤＝各店の実際の終わり）
+const STORE_LAST = { S001:'4:00', S002:'25:00', S003:'23:30' };
+// 終了プリセット：通常の時間帯＋「ラスト」
+function endPresetsFor(storeId) { return END_PRESETS.concat([{ label:'ラスト', value: STORE_LAST[storeId] || STORE_CLOSE[storeId] || '24:00' }]); }
 
 // ============================================================
 // 状態
@@ -364,16 +442,28 @@ let proxyMonth = new Date().getMonth()+1, proxyYear = new Date().getFullYear();
 let proxySelected = {}, proxyShortage = {};
 let daysStore = null, daysMonth = new Date().getMonth()+1, daysYear = new Date().getFullYear();
 let daysFixedOff = [], daysHolidays = new Set(), daysOpens = new Set();
+let confirmStore = null, confirmMonth = new Date().getMonth()+1, confirmYear = new Date().getFullYear();
+let confirmDays = {}, confirmDayKey = null;
 let pendingDate = null, pendingMode = null;
 
 // ============================================================
 // GAS通信
 // ============================================================
+let netCount = 0;
+function setNet(on) {
+  netCount = Math.max(0, netCount + (on ? 1 : -1));
+  document.getElementById('net-indicator').classList.toggle('show', netCount > 0);
+}
 async function gasGet(params) {
   const url = GAS_URL + '?' + new URLSearchParams(params).toString();
-  const res  = await fetch(url);
-  const text = await res.text();
-  try { return JSON.parse(text); } catch(e) { throw new Error('GAS応答エラー: ' + text.slice(0,100)); }
+  setNet(true);
+  try {
+    const res  = await fetch(url);
+    const text = await res.text();
+    try { return JSON.parse(text); } catch(e) { throw new Error('GAS応答エラー: ' + text.slice(0,100)); }
+  } finally {
+    setNet(false);
+  }
 }
 
 // ============================================================
@@ -418,8 +508,11 @@ function setupApp() {
   document.getElementById('staff-name-lbl').textContent   = staffData.name + 'さん';
   document.getElementById('staff-stores-lbl').textContent = '担当: ' + staffData.stores.map(s=>s.name).join(' / ');
   if (staffData.isAdmin) {
-    document.getElementById('nav-proxy').style.display = 'flex';
-    document.getElementById('nav-days').style.display  = 'flex';
+    document.getElementById('nav-proxy').style.display   = 'flex';
+    document.getElementById('nav-days').style.display    = 'flex';
+    document.getElementById('nav-confirm').style.display = 'flex';
+    document.getElementById('confirm-modal-do').onclick     = doConfirm;
+    document.getElementById('confirm-modal-cancel').onclick = () => document.getElementById('confirm-modal').classList.remove('show');
   }
 
   initApplyTab();
@@ -444,7 +537,7 @@ function setupApp() {
 // タブ切り替え
 // ============================================================
 function switchTab(tab) {
-  ['apply','edit','proxy','days'].forEach(t => {
+  ['apply','edit','proxy','days','confirm'].forEach(t => {
     document.getElementById('tab-'+t).style.display = t===tab ? '' : 'none';
     const nav = document.getElementById('nav-'+t);
     if (nav) nav.classList.toggle('active', t===tab);
@@ -452,8 +545,9 @@ function switchTab(tab) {
   if (tab === 'edit') loadEditShifts();
   if (tab === 'proxy') loadProxyStaffList();
   if (tab === 'days') initDaysTab();
+  if (tab === 'confirm') initConfirmTab();
   document.getElementById('header-title').textContent =
-    tab==='apply' ? '📅 シフト申請' : tab==='edit' ? '✏️ シフト修正' : tab==='proxy' ? '👥 代理申請' : '🗓 営業日設定';
+    tab==='apply' ? '📅 シフト申請' : tab==='edit' ? '✏️ シフト修正' : tab==='proxy' ? '👥 代理申請' : tab==='days' ? '🗓 営業日設定' : '✅ シフト確定';
 }
 
 // ============================================================
@@ -482,7 +576,7 @@ async function loadApplyData() {
     gasGet({ action:'getShifts',  lineId, month: applyMonth }),
     gasGet({ action:'getShortage', storeId: applyStore.id, month: applyMonth }),
   ]);
-  if (a.status==='fulfilled' && a.value.ok) a.value.shifts.filter(s=>s.storeId===applyStore.id).forEach(s => applyExisting[s.date]={start:s.start,end:s.end});
+  if (a.status==='fulfilled' && a.value.ok) a.value.shifts.filter(s=>s.storeId===applyStore.id).forEach(s => applyExisting[s.date]={start:s.start,end:s.end,confirmed:s.confirmed});
   if (b.status==='fulfilled' && b.value.ok) applyShortage = b.value.days;
   renderApplyCal();
 }
@@ -509,13 +603,14 @@ function renderApplyCal() {
     if (isPast||isOor) cls += ' oor';
     if (isToday)       cls += ' today';
     if (isSel)         cls += ' selected';
-    else if (isEx)     cls += ' has-shift';
+    else if (isEx)     cls += (applyExisting[key].confirmed ? ' has-shift' : ' pending');
     else if (isShort && !isPast && !isOor) cls += ' short';
     c.className = cls;
     const num=document.createElement('div'); num.className='day-num'; num.textContent=d; c.appendChild(num);
     if (isEx && !isSel) {
-      const b=document.createElement('div'); b.className='shift-exist-badge';
-      const e=applyExisting[key]; b.textContent=e.start+'\n〜'+e.end; c.appendChild(b);
+      const e=applyExisting[key];
+      const b=document.createElement('div'); b.className=e.confirmed?'shift-exist-badge':'shift-pending-badge';
+      b.textContent=(e.confirmed?'':'申)')+e.start+'\n〜'+e.end; c.appendChild(b);
     } else if (isShort && !isSel && !isPast && !isOor) {
       const b=document.createElement('div'); b.className='short-badge';
       b.textContent = sh.shortage>0 ? 'あと'+sh.shortage : (sh.missingPro ? '熟練' : '募集'); c.appendChild(b);
@@ -589,8 +684,8 @@ function renderEditList() {
 function openEditModal(id,date,storeId,start,end) {
   editingShift={id,date,storeId};
   document.getElementById('edit-modal-title').textContent=`${date}の時間変更`;
-  buildPresets2('edit-start',START_PRESETS,start);
-  buildPresets2('edit-end',END_PRESETS,end);
+  buildPresets2('edit-start',startPresetsFor(storeId),start);
+  buildPresets2('edit-end',endPresetsFor(storeId),end);
   document.getElementById('edit-start-custom').value='';
   document.getElementById('edit-end-custom').value='';
   document.getElementById('edit-modal').classList.add('show');
@@ -810,6 +905,116 @@ async function tapDaysDate(day, key) {
 }
 
 // ============================================================
+// ⑤ 確定タブ（管理者）
+// ============================================================
+function initConfirmTab() {
+  const tabs = document.getElementById('store-tabs-confirm');
+  if (!tabs.children.length) {
+    const allStores = Object.keys(STORE_NAME).map(id => ({ id, name: STORE_NAME[id] }));
+    allStores.forEach((store, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'store-tab' + (i===0?' active':'');
+      btn.textContent = store.name;
+      btn.onclick = () => { confirmStore = store; document.querySelectorAll('#store-tabs-confirm .store-tab').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); loadConfirmData(); };
+      tabs.appendChild(btn);
+    });
+    confirmStore = allStores[0];
+    document.getElementById('confirm-prev').onclick = () => { confirmMonth--; if(confirmMonth<1){confirmMonth=12;confirmYear--;} loadConfirmData(); };
+    document.getElementById('confirm-next').onclick = () => { confirmMonth++; if(confirmMonth>12){confirmMonth=1;confirmYear++;} loadConfirmData(); };
+  }
+  loadConfirmData();
+}
+
+async function loadConfirmData() {
+  confirmDays = {};
+  renderConfirmCal();
+  try {
+    const data = await gasGet({ action:'getConfirmCal', lineId, storeId:confirmStore.id, month:confirmMonth, year:confirmYear });
+    if (data.ok) confirmDays = data.days || {};
+  } catch(e) {}
+  renderConfirmCal();
+}
+
+function renderConfirmCal() {
+  document.getElementById('confirm-month-lbl').textContent = `${confirmYear}年${confirmMonth}月`;
+  const grid = document.getElementById('confirm-grid');
+  while (grid.children.length > 7) grid.removeChild(grid.lastChild);
+  const first = new Date(confirmYear, confirmMonth-1, 1).getDay();
+  const last  = new Date(confirmYear, confirmMonth, 0).getDate();
+  for (let i=0;i<first;i++) { const c=document.createElement('div'); c.className='cal-cell empty'; grid.appendChild(c); }
+  for (let d=1;d<=last;d++) {
+    const key   = `${confirmMonth}/${d}`;
+    const items = (confirmDays[key]||[]).filter(x=>!x.rest);
+    const pend  = items.filter(x=>!x.confirmed).length;
+    const conf  = items.filter(x=>x.confirmed).length;
+    const c = document.createElement('div');
+    let cls = 'cal-cell';
+    if (pend>0)      cls += ' has-pending';
+    else if (conf>0) cls += ' all-conf';
+    c.className = cls;
+    const num=document.createElement('div'); num.className='day-num'; num.textContent=d; c.appendChild(num);
+    if (pend>0 || conf>0) {
+      const b=document.createElement('div'); b.className='confirm-badge';
+      b.innerHTML = (pend>0?`<div class="pend">申${pend}</div>`:'') + (conf>0?`<div class="conf">確${conf}</div>`:'');
+      c.appendChild(b);
+    }
+    if (items.length>0) c.onclick = () => openConfirmModal(key);
+    grid.appendChild(c);
+  }
+}
+
+function openConfirmModal(key) {
+  confirmDayKey = key;
+  const [m,d] = key.split('/').map(Number);
+  const dt = new Date(confirmYear, m-1, d);
+  document.getElementById('confirm-modal-title').textContent = `${key}（${DOW[dt.getDay()]}）`;
+  document.getElementById('confirm-modal-sub').textContent   = confirmStore.name + ' の申請';
+  const list = document.getElementById('confirm-modal-list');
+  list.innerHTML = '';
+  const items = (confirmDays[key]||[]).slice().sort((a,b)=> (a.rest-b.rest) || (a.confirmed-b.confirmed));
+  items.forEach(it => {
+    const row = document.createElement('div'); row.className='cf-row';
+    const skill = it.skill==='熟練'?'★':it.skill==='成長中'?'△':it.skill==='新人'?'○':'';
+    if (it.rest) {
+      row.innerHTML = `<div style="width:22px;flex-shrink:0"></div><div class="cf-info"><div class="cf-name" style="color:#aaa">${skill}${it.name}</div></div><div class="cf-chip" style="background:#f0f0f0;color:#999">休み</div>`;
+    } else if (it.confirmed) {
+      row.innerHTML = `<div style="width:22px;flex-shrink:0;text-align:center;color:#3182ce;font-weight:bold">✓</div><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${it.end}</div></div><div class="cf-chip conf">確定済み</div>`;
+    } else {
+      row.innerHTML = `<input type="checkbox" class="cf-check" value="${it.id}" checked onchange="updateCfBtn()"><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${it.end}</div></div><div class="cf-chip pend">申請中</div>`;
+    }
+    list.appendChild(row);
+  });
+  updateCfBtn();
+  document.getElementById('confirm-modal').classList.add('show');
+}
+
+function cfSelectAll(on) {
+  document.querySelectorAll('#confirm-modal-list .cf-check').forEach(c => c.checked = on);
+  updateCfBtn();
+}
+
+function updateCfBtn() {
+  const n = document.querySelectorAll('#confirm-modal-list .cf-check:checked').length;
+  const btn = document.getElementById('confirm-modal-do');
+  btn.disabled = n===0;
+  btn.textContent = `選択した${n}件を確定`;
+}
+
+async function doConfirm() {
+  const ids = Array.from(document.querySelectorAll('#confirm-modal-list .cf-check:checked')).map(c=>c.value);
+  if (!ids.length) return;
+  const btn = document.getElementById('confirm-modal-do');
+  btn.disabled = true; btn.textContent = '確定中...';
+  try {
+    const data = await gasGet({ action:'confirmShifts', lineId, ids:JSON.stringify(ids) });
+    document.getElementById('confirm-modal').classList.remove('show');
+    if (data.ok) alert(`✅ ${data.confirmed}件を確定しました。\n${data.notified}名にLINE通知を送信しました。`);
+    else alert('確定エラー: ' + (data.error||'不明'));
+    await loadConfirmData();
+  } catch(e) { alert('確定エラー: ' + e.message); updateCfBtn(); }
+}
+
+// ============================================================
 // 完了画面
 // ============================================================
 function showDone(label, saved, errors, mode) {
@@ -831,8 +1036,8 @@ function openModal(month, day, store) {
   const dt=new Date(year,month-1,day);
   document.getElementById('modal-title').textContent=`${month}/${day}（${DOW[dt.getDay()]}）`;
   document.getElementById('modal-sub').textContent=(store?.name||'')+ ' ' +(store?.open||'')+'〜'+(store?.close||'');
-  buildPresets2('start', START_PRESETS, store?.open||'18:00');
-  buildPresets2('end',   END_PRESETS,   store?.close||'24:00');
+  buildPresets2('start', startPresetsFor(store?.id), store?.open||'18:00');
+  buildPresets2('end',   endPresetsFor(store?.id),   store?.close||'24:00');
   document.getElementById('start-custom').value='';
   document.getElementById('end-custom').value='';
   document.getElementById('modal').classList.add('show');
@@ -855,7 +1060,16 @@ function confirmTime() {
 // ============================================================
 function buildPresets2(type, times, def) {
   const c=document.getElementById(type+'-presets'); c.innerHTML='';
-  times.forEach(t=>{ const b=document.createElement('button'); b.className='time-btn'+(t===def?' selected':''); b.textContent=t; b.dataset.time=t; b.onclick=()=>{ document.querySelectorAll(`#${type}-presets .time-btn`).forEach(x=>x.classList.remove('selected')); b.classList.add('selected'); document.getElementById(type+'-custom').value=''; }; c.appendChild(b); });
+  let selected=false;
+  times.forEach(t=>{
+    const label = (typeof t==='object') ? t.label : t;
+    const value = (typeof t==='object') ? t.value : t;
+    const isDef = !selected && value===def;
+    if (isDef) selected=true;
+    const b=document.createElement('button'); b.className='time-btn'+(isDef?' selected':''); b.textContent=label; b.dataset.time=value;
+    b.onclick=()=>{ document.querySelectorAll(`#${type}-presets .time-btn`).forEach(x=>x.classList.remove('selected')); b.classList.add('selected'); document.getElementById(type+'-custom').value=''; };
+    c.appendChild(b);
+  });
 }
 function clearPresets(type){ document.querySelectorAll(`#${type}-presets .time-btn`).forEach(b=>b.classList.remove('selected')); }
 function getTime2(type){ const c=document.getElementById(type+'-custom').value.trim(); if(c)return c; const b=document.querySelector(`#${type}-presets .time-btn.selected`); return b?b.dataset.time:null; }
