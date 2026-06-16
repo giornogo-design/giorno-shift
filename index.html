@@ -148,6 +148,7 @@ body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #33
 .cf-chip { font-size: 10px; padding: 3px 9px; border-radius: 10px; font-weight: bold; flex-shrink: 0; }
 .cf-chip.pend { background: #fff3e0; color: #e67e22; }
 .cf-chip.conf { background: #eef5ff; color: #3182ce; }
+.cf-undo { flex-shrink: 0; margin-left: 6px; padding: 5px 11px; border: 1px solid #ccc; background: #fff; border-radius: 14px; font-size: 11px; color: #666; cursor: pointer; }
 .cf-tools { display: flex; gap: 8px; margin: 4px 0 12px; }
 .cf-tool-btn { flex: 1; padding: 9px; border: 2px solid #e2e8f0; background: white; border-radius: 10px; font-size: 13px; cursor: pointer; }
 
@@ -301,6 +302,10 @@ body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #33
   <!-- ⑤ 確定タブ（管理者） -->
   <div id="tab-confirm" style="display:none">
     <div class="store-tabs" id="store-tabs-confirm"></div>
+    <div id="confirm-notify-bar" style="display:none;margin:0 12px 10px;padding:12px 14px;background:#fff8e1;border:1px solid #ffd54f;border-radius:12px;align-items:center;gap:10px">
+      <div style="flex:1;font-size:13px;color:#8a6d00;line-height:1.5"><b id="confirm-notify-count">0</b>件の確定がまだ通知されていません</div>
+      <button id="confirm-notify-btn" style="flex-shrink:0;padding:9px 16px;background:#06c755;color:#fff;border:none;border-radius:20px;font-size:13px;font-weight:bold;cursor:pointer">まとめて通知</button>
+    </div>
     <div class="cal-wrap">
       <div class="cal-header">
         <button class="cal-nav" id="confirm-prev">‹</button>
@@ -382,6 +387,7 @@ body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #33
     </div>
     <div id="confirm-modal-list"></div>
     <button class="btn-confirm" id="confirm-modal-do">選択した0件を確定</button>
+    <button class="btn-cancel"  id="confirm-modal-decline" style="color:#e67e22;border:2px solid #ffd9b0;background:#fff8f0;font-weight:bold">選択した0件を見送り</button>
     <button class="btn-cancel"  id="confirm-modal-cancel">閉じる</button>
   </div>
 </div>
@@ -443,7 +449,7 @@ let proxySelected = {}, proxyShortage = {};
 let daysStore = null, daysMonth = new Date().getMonth()+1, daysYear = new Date().getFullYear();
 let daysFixedOff = [], daysHolidays = new Set(), daysOpens = new Set();
 let confirmStore = null, confirmMonth = new Date().getMonth()+1, confirmYear = new Date().getFullYear();
-let confirmDays = {}, confirmDayKey = null;
+let confirmDays = {}, confirmDayKey = null, confirmPendingNotify = 0;
 let pendingDate = null, pendingMode = null;
 
 // ============================================================
@@ -511,8 +517,10 @@ function setupApp() {
     document.getElementById('nav-proxy').style.display   = 'flex';
     document.getElementById('nav-days').style.display    = 'flex';
     document.getElementById('nav-confirm').style.display = 'flex';
-    document.getElementById('confirm-modal-do').onclick     = doConfirm;
-    document.getElementById('confirm-modal-cancel').onclick = () => document.getElementById('confirm-modal').classList.remove('show');
+    document.getElementById('confirm-modal-do').onclick      = doConfirm;
+    document.getElementById('confirm-modal-decline').onclick = doDecline;
+    document.getElementById('confirm-modal-cancel').onclick  = () => document.getElementById('confirm-modal').classList.remove('show');
+    document.getElementById('confirm-notify-btn').onclick    = doNotify;
   }
 
   initApplyTab();
@@ -930,9 +938,29 @@ async function loadConfirmData() {
   renderConfirmCal();
   try {
     const data = await gasGet({ action:'getConfirmCal', lineId, storeId:confirmStore.id, month:confirmMonth, year:confirmYear });
-    if (data.ok) confirmDays = data.days || {};
+    if (data.ok) { confirmDays = data.days || {}; confirmPendingNotify = data.pendingNotify || 0; }
   } catch(e) {}
   renderConfirmCal();
+  renderNotifyBar();
+}
+
+function renderNotifyBar() {
+  document.getElementById('confirm-notify-count').textContent = confirmPendingNotify;
+  document.getElementById('confirm-notify-bar').style.display = confirmPendingNotify > 0 ? 'flex' : 'none';
+}
+
+async function doNotify() {
+  if (!confirmPendingNotify) return;
+  if (!confirm(`まだ通知していない確定シフト ${confirmPendingNotify}件を、スタッフ本人にLINE通知します。\nよろしいですか？`)) return;
+  const btn = document.getElementById('confirm-notify-btn');
+  btn.disabled = true; btn.textContent = '通知中...';
+  try {
+    const data = await gasGet({ action:'notifyConfirmed', lineId });
+    if (data.ok) alert(`✅ ${data.notified}名に通知しました（${data.shiftCount}件）。`);
+    else alert('通知エラー: ' + (data.error||'不明'));
+  } catch(e) { alert('通知エラー: ' + e.message); }
+  btn.disabled = false; btn.textContent = 'まとめて通知';
+  await loadConfirmData();
 }
 
 function renderConfirmCal() {
@@ -944,7 +972,8 @@ function renderConfirmCal() {
   for (let i=0;i<first;i++) { const c=document.createElement('div'); c.className='cal-cell empty'; grid.appendChild(c); }
   for (let d=1;d<=last;d++) {
     const key   = `${confirmMonth}/${d}`;
-    const items = (confirmDays[key]||[]).filter(x=>!x.rest);
+    const raw   = confirmDays[key]||[];
+    const items = raw.filter(x=>!x.rest && !x.declined);
     const pend  = items.filter(x=>!x.confirmed).length;
     const conf  = items.filter(x=>x.confirmed).length;
     const c = document.createElement('div');
@@ -958,7 +987,7 @@ function renderConfirmCal() {
       b.innerHTML = (pend>0?`<div class="pend">申${pend}</div>`:'') + (conf>0?`<div class="conf">確${conf}</div>`:'');
       c.appendChild(b);
     }
-    if (items.length>0) c.onclick = () => openConfirmModal(key);
+    if (raw.length>0) c.onclick = () => openConfirmModal(key);
     grid.appendChild(c);
   }
 }
@@ -971,14 +1000,19 @@ function openConfirmModal(key) {
   document.getElementById('confirm-modal-sub').textContent   = confirmStore.name + ' の申請';
   const list = document.getElementById('confirm-modal-list');
   list.innerHTML = '';
-  const items = (confirmDays[key]||[]).slice().sort((a,b)=> (a.rest-b.rest) || (a.confirmed-b.confirmed));
+  const rank = it => it.rest?3 : it.declined?2 : it.confirmed?1 : 0;
+  const items = (confirmDays[key]||[]).slice().sort((a,b)=> rank(a)-rank(b));
   items.forEach(it => {
     const row = document.createElement('div'); row.className='cf-row';
     const skill = it.skill==='熟練'?'★':it.skill==='成長中'?'△':it.skill==='新人'?'○':'';
     if (it.rest) {
       row.innerHTML = `<div style="width:22px;flex-shrink:0"></div><div class="cf-info"><div class="cf-name" style="color:#aaa">${skill}${it.name}</div></div><div class="cf-chip" style="background:#f0f0f0;color:#999">休み</div>`;
+    } else if (it.declined) {
+      row.innerHTML = `<div style="width:22px;flex-shrink:0"></div><div class="cf-info"><div class="cf-name" style="color:#aaa">${skill}${it.name}</div><div class="cf-time" style="color:#bbb">${it.start} 〜 ${it.end}</div></div><div class="cf-chip" style="background:#f0f0f0;color:#999">見送り</div><button class="cf-undo" onclick="revertOne('${it.id}')">取消</button>`;
+    } else if (it.confirmed && it.notified) {
+      row.innerHTML = `<div style="width:22px;flex-shrink:0;text-align:center;color:#3182ce;font-weight:bold">✓</div><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${it.end}</div></div><div class="cf-chip conf">通知済み</div>`;
     } else if (it.confirmed) {
-      row.innerHTML = `<div style="width:22px;flex-shrink:0;text-align:center;color:#3182ce;font-weight:bold">✓</div><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${it.end}</div></div><div class="cf-chip conf">確定済み</div>`;
+      row.innerHTML = `<div style="width:22px;flex-shrink:0;text-align:center;color:#3182ce;font-weight:bold">✓</div><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${it.end}</div></div><div class="cf-chip" style="background:#fff3e0;color:#e67e22">確定・未通知</div><button class="cf-undo" onclick="revertOne('${it.id}')">取消</button>`;
     } else {
       row.innerHTML = `<input type="checkbox" class="cf-check" value="${it.id}" checked onchange="updateCfBtn()"><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${it.end}</div></div><div class="cf-chip pend">申請中</div>`;
     }
@@ -995,9 +1029,36 @@ function cfSelectAll(on) {
 
 function updateCfBtn() {
   const n = document.querySelectorAll('#confirm-modal-list .cf-check:checked').length;
-  const btn = document.getElementById('confirm-modal-do');
-  btn.disabled = n===0;
-  btn.textContent = `選択した${n}件を確定`;
+  const doBtn = document.getElementById('confirm-modal-do');
+  doBtn.disabled = n===0; doBtn.textContent = `選択した${n}件を確定`;
+  const dcBtn = document.getElementById('confirm-modal-decline');
+  dcBtn.disabled = n===0; dcBtn.textContent = `選択した${n}件を見送り`;
+}
+
+async function doDecline() {
+  const ids = Array.from(document.querySelectorAll('#confirm-modal-list .cf-check:checked')).map(c=>c.value);
+  if (!ids.length) return;
+  if (!confirm(`選択した${ids.length}件を見送り（取下げ）にします。\n本人への通知はされません。よろしいですか？`)) return;
+  const btn = document.getElementById('confirm-modal-decline');
+  btn.disabled = true; btn.textContent = '処理中...';
+  try {
+    const data = await gasGet({ action:'declineShifts', lineId, ids:JSON.stringify(ids) });
+    document.getElementById('confirm-modal').classList.remove('show');
+    if (data.ok) alert(`🗂 ${data.declined}件を見送りにしました。`);
+    else alert('エラー: ' + (data.error||'不明'));
+    await loadConfirmData();
+  } catch(e) { alert('エラー: ' + e.message); updateCfBtn(); }
+}
+
+async function revertOne(id) {
+  if (!confirm('このシフトを「申請中」に戻しますか？')) return;
+  try {
+    const data = await gasGet({ action:'revertShifts', lineId, ids:JSON.stringify([id]) });
+    if (!data.ok) { alert('エラー: ' + (data.error||'不明')); return; }
+    await loadConfirmData();
+    if ((confirmDays[confirmDayKey]||[]).length) openConfirmModal(confirmDayKey);
+    else document.getElementById('confirm-modal').classList.remove('show');
+  } catch(e) { alert('エラー: ' + e.message); }
 }
 
 async function doConfirm() {
@@ -1008,7 +1069,7 @@ async function doConfirm() {
   try {
     const data = await gasGet({ action:'confirmShifts', lineId, ids:JSON.stringify(ids) });
     document.getElementById('confirm-modal').classList.remove('show');
-    if (data.ok) alert(`✅ ${data.confirmed}件を確定しました。\n${data.notified}名にLINE通知を送信しました。`);
+    if (data.ok) alert(`✅ ${data.confirmed}件を確定しました。\n通知はまだ送っていません。準備ができたら「まとめて通知」で送信してください。`);
     else alert('確定エラー: ' + (data.error||'不明'));
     await loadConfirmData();
   } catch(e) { alert('確定エラー: ' + e.message); updateCfBtn(); }
