@@ -66,6 +66,13 @@ body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #33
 .shift-badge { font-size: 9px; color: #059c43; font-weight: bold; line-height: 1.1; text-align: center; }
 .shift-exist-badge { font-size: 9px; color: #3182ce; font-weight: bold; line-height: 1.2; text-align: center; white-space: pre; }
 .short-badge { font-size: 8px; color: #e67e22; font-weight: bold; line-height: 1.2; text-align: center; margin-top: 1px; }
+.cal-cell.dayoff { background: #f0f0f0; }
+.cal-cell.dholiday { background: #ffebee; }
+.cal-cell.dopen { background: #e8faf0; }
+.day-status { font-size: 9px; font-weight: bold; line-height: 1.2; margin-top: 1px; }
+.day-status.off  { color: #999; }
+.day-status.hol  { color: #e53e3e; }
+.day-status.open { color: #06c755; }
 
 /* 凡例 */
 .legend { display: flex; flex-wrap: wrap; gap: 10px; padding: 8px 16px; font-size: 11px; color: #666; border-top: 1px solid #f0f0f0; }
@@ -237,6 +244,33 @@ body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #33
       </div>
     </div>
   </div>
+
+  <!-- ④ 営業日設定タブ（管理者） -->
+  <div id="tab-days" style="display:none">
+    <div class="store-tabs" id="store-tabs-days"></div>
+    <div class="cal-wrap">
+      <div class="cal-header">
+        <button class="cal-nav" id="days-prev">‹</button>
+        <div class="month-lbl" id="days-month-lbl"></div>
+        <button class="cal-nav" id="days-next">›</button>
+      </div>
+      <div class="cal-grid" id="days-grid">
+        <div class="cal-dow">日</div><div class="cal-dow">月</div><div class="cal-dow">火</div>
+        <div class="cal-dow">水</div><div class="cal-dow">木</div><div class="cal-dow">金</div><div class="cal-dow">土</div>
+      </div>
+      <div class="legend">
+        <span><span class="dot" style="background:#f0f0f0;border:1px solid #bbb"></span>定休</span>
+        <span><span class="dot" style="background:#ffebee;border:1px solid #e53e3e"></span>臨時休業</span>
+        <span><span class="dot" style="background:#e8faf0;border:1px solid #06c755"></span>臨時営業</span>
+      </div>
+    </div>
+    <div style="margin:0 12px 16px;padding:14px 16px;background:white;border-radius:12px;font-size:12px;color:#777;line-height:1.8;box-shadow:0 1px 4px rgba(0,0,0,0.08)">
+      日付をタップして切り替えます：<br>
+      ・通常の営業日 → <b style="color:#e53e3e">臨時休業</b><br>
+      ・定休日 → <b style="color:#06c755">臨時営業</b><br>
+      ・設定済みの日 → 元に戻す
+    </div>
+  </div>
 </div>
 
 <!-- 完了画面 -->
@@ -257,6 +291,9 @@ body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #33
   </button>
   <button class="nav-btn" id="nav-proxy" onclick="switchTab('proxy')" style="display:none">
     <span class="icon">👥</span>代理
+  </button>
+  <button class="nav-btn" id="nav-days" onclick="switchTab('days')" style="display:none">
+    <span class="icon">🗓</span>営業日
   </button>
 </nav>
 
@@ -325,6 +362,8 @@ let editShifts = [], editingShift = null;
 let proxyTarget = null, proxyStore = null;
 let proxyMonth = new Date().getMonth()+1, proxyYear = new Date().getFullYear();
 let proxySelected = {}, proxyShortage = {};
+let daysStore = null, daysMonth = new Date().getMonth()+1, daysYear = new Date().getFullYear();
+let daysFixedOff = [], daysHolidays = new Set(), daysOpens = new Set();
 let pendingDate = null, pendingMode = null;
 
 // ============================================================
@@ -378,7 +417,10 @@ function setupApp() {
   document.getElementById('bottom-nav').style.display = 'flex';
   document.getElementById('staff-name-lbl').textContent   = staffData.name + 'さん';
   document.getElementById('staff-stores-lbl').textContent = '担当: ' + staffData.stores.map(s=>s.name).join(' / ');
-  if (staffData.isAdmin) document.getElementById('nav-proxy').style.display = 'flex';
+  if (staffData.isAdmin) {
+    document.getElementById('nav-proxy').style.display = 'flex';
+    document.getElementById('nav-days').style.display  = 'flex';
+  }
 
   initApplyTab();
   document.getElementById('apply-submit').onclick = submitApply;
@@ -402,15 +444,16 @@ function setupApp() {
 // タブ切り替え
 // ============================================================
 function switchTab(tab) {
-  ['apply','edit','proxy'].forEach(t => {
+  ['apply','edit','proxy','days'].forEach(t => {
     document.getElementById('tab-'+t).style.display = t===tab ? '' : 'none';
     const nav = document.getElementById('nav-'+t);
     if (nav) nav.classList.toggle('active', t===tab);
   });
   if (tab === 'edit') loadEditShifts();
   if (tab === 'proxy') loadProxyStaffList();
+  if (tab === 'days') initDaysTab();
   document.getElementById('header-title').textContent =
-    tab==='apply' ? '📅 シフト申請' : tab==='edit' ? '✏️ シフト修正' : '👥 代理申請';
+    tab==='apply' ? '📅 シフト申請' : tab==='edit' ? '✏️ シフト修正' : tab==='proxy' ? '👥 代理申請' : '🗓 営業日設定';
 }
 
 // ============================================================
@@ -681,6 +724,88 @@ async function submitProxy() {
     items.forEach(s=>delete proxySelected[`${s.month}/${s.day}`]);
   } catch(e){ alert('登録エラー: '+e.message); }
   renderProxyList();
+}
+
+// ============================================================
+// ④ 営業日設定タブ（管理者）
+// ============================================================
+function initDaysTab() {
+  const tabs = document.getElementById('store-tabs-days');
+  if (!tabs.children.length) {
+    staffData.stores.forEach((store, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'store-tab' + (i===0?' active':'');
+      btn.textContent = store.name;
+      btn.onclick = () => { daysStore = store; document.querySelectorAll('#store-tabs-days .store-tab').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); loadDaysData(); };
+      tabs.appendChild(btn);
+    });
+    daysStore = staffData.stores[0];
+    document.getElementById('days-prev').onclick = () => { daysMonth--; if(daysMonth<1){daysMonth=12;daysYear--;} loadDaysData(); };
+    document.getElementById('days-next').onclick = () => { daysMonth++; if(daysMonth>12){daysMonth=1;daysYear++;} loadDaysData(); };
+  }
+  loadDaysData();
+}
+
+async function loadDaysData() {
+  daysFixedOff = []; daysHolidays = new Set(); daysOpens = new Set();
+  try {
+    const data = await gasGet({ action:'getDayStatus', lineId, storeId: daysStore.id, month: daysMonth });
+    if (data.ok) {
+      daysFixedOff = data.fixedOff || [];
+      daysHolidays = new Set(data.holidays || []);
+      daysOpens    = new Set(data.specialOpens || []);
+    }
+  } catch(e) {}
+  renderDaysCal();
+}
+
+function renderDaysCal() {
+  document.getElementById('days-month-lbl').textContent = `${daysYear}年${daysMonth}月`;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const grid  = document.getElementById('days-grid');
+  while (grid.children.length > 7) grid.removeChild(grid.lastChild);
+  const first = new Date(daysYear, daysMonth-1, 1).getDay();
+  const last  = new Date(daysYear, daysMonth, 0).getDate();
+  document.getElementById('days-prev').disabled = new Date(daysYear,daysMonth-1,1) <= new Date(today.getFullYear(),today.getMonth(),1);
+  for (let i=0;i<first;i++) { const c=document.createElement('div'); c.className='cal-cell empty'; grid.appendChild(c); }
+  for (let d=1;d<=last;d++) {
+    const dt = new Date(daysYear,daysMonth-1,d); const key=`${daysMonth}/${d}`;
+    const isPast = dt<today, isToday=dt.getTime()===today.getTime();
+    const isOpen = daysOpens.has(key);
+    const isHol  = daysHolidays.has(key);
+    const isFix  = daysFixedOff.includes(dt.getDay());
+    const c = document.createElement('div');
+    let cls = 'cal-cell';
+    if (isPast) cls += ' oor';
+    if (isToday) cls += ' today';
+    if (isOpen)      cls += ' dopen';
+    else if (isHol)  cls += ' dholiday';
+    else if (isFix)  cls += ' dayoff';
+    c.className = cls;
+    const num=document.createElement('div'); num.className='day-num'; num.textContent=d; c.appendChild(num);
+    let label='', lcls='';
+    if (isOpen)      { label='営業'; lcls='open'; }
+    else if (isHol)  { label='休業'; lcls='hol'; }
+    else if (isFix)  { label='定休'; lcls='off'; }
+    if (label) { const b=document.createElement('div'); b.className='day-status '+lcls; b.textContent=label; c.appendChild(b); }
+    if (!isPast) c.onclick=()=>tapDaysDate(d,key);
+    grid.appendChild(c);
+  }
+}
+
+async function tapDaysDate(day, key) {
+  const dt = new Date(daysYear, daysMonth-1, day); const dow = dt.getDay();
+  const isOpen = daysOpens.has(key), isHol = daysHolidays.has(key), isFix = daysFixedOff.includes(dow);
+  let type, msg;
+  if (isOpen)      { type='normal';  msg=`${daysMonth}/${day}（${DOW[dow]}）の臨時営業を取り消し、定休日に戻しますか？`; }
+  else if (isHol)  { type='normal';  msg=`${daysMonth}/${day}（${DOW[dow]}）の臨時休業を取り消しますか？`; }
+  else if (isFix)  { type='open';    msg=`${daysMonth}/${day}（${DOW[dow]}）は定休日です。\n${daysStore.name}を臨時営業にしますか？`; }
+  else             { type='holiday'; msg=`${daysMonth}/${day}（${DOW[dow]}）の${daysStore.name}を臨時休業にしますか？`; }
+  if (!confirm(msg)) return;
+  try {
+    await gasGet({ action:'setDayType', lineId, storeId:daysStore.id, month:daysMonth, day, type });
+    await loadDaysData();
+  } catch(e) { alert('変更エラー: '+e.message); }
 }
 
 // ============================================================
