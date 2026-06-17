@@ -266,6 +266,10 @@ body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #33
       <div class="submit-wrap">
         <button class="btn-submit" id="proxy-submit" disabled>代理登録する（0件）</button>
       </div>
+      <div class="selected-list">
+        <div class="section-title">📝 登録済みシフト（変更・削除）</div>
+        <div id="proxy-edit-list"><div class="empty-state">読み込み中...</div></div>
+      </div>
       <div style="padding:0 12px 12px">
         <button class="btn-cancel" onclick="backToProxyStaffList()">← スタッフ選択に戻る</button>
       </div>
@@ -303,8 +307,8 @@ body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #33
   <div id="tab-confirm" style="display:none">
     <div class="store-tabs" id="store-tabs-confirm"></div>
     <div id="confirm-notify-bar" style="display:none;margin:0 12px 10px;padding:12px 14px;background:#fff8e1;border:1px solid #ffd54f;border-radius:12px;align-items:center;gap:10px">
-      <div style="flex:1;font-size:13px;color:#8a6d00;line-height:1.5"><b id="confirm-notify-count">0</b>件の確定がまだ通知されていません</div>
-      <button id="confirm-notify-btn" style="flex-shrink:0;padding:9px 16px;background:#06c755;color:#fff;border:none;border-radius:20px;font-size:13px;font-weight:bold;cursor:pointer">まとめて通知</button>
+      <div style="flex:1;font-size:13px;color:#8a6d00;line-height:1.5"><span id="confirm-notify-store"></span><b id="confirm-notify-count">0</b>件の確定が未通知です</div>
+      <button id="confirm-notify-btn" style="flex-shrink:0;padding:9px 16px;background:#06c755;color:#fff;border:none;border-radius:20px;font-size:13px;font-weight:bold;cursor:pointer">未通知を確認</button>
     </div>
     <div class="cal-wrap">
       <div class="cal-header">
@@ -392,6 +396,17 @@ body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #33
   </div>
 </div>
 
+<!-- 未通知リストモーダル（管理者） -->
+<div class="modal-overlay" id="notify-list-modal">
+  <div class="modal">
+    <div class="modal-title">未通知の確定シフト</div>
+    <div class="modal-sub" id="notify-list-sub"></div>
+    <div id="notify-list-body"></div>
+    <button class="btn-confirm" id="notify-list-send">この店舗をまとめて通知</button>
+    <button class="btn-cancel"  id="notify-list-close">閉じる</button>
+  </div>
+</div>
+
 <!-- 修正モーダル -->
 <div class="modal-overlay" id="edit-modal">
   <div class="modal">
@@ -442,7 +457,8 @@ let lineId = null, staffData = null;
 let applyStore = null, applyMonth = new Date().getMonth()+1, applyYear = new Date().getFullYear();
 let applySelected = {}, applyExisting = {}, applyShortage = {};
 let editMonth = new Date().getMonth()+1, editYear = new Date().getFullYear();
-let editShifts = [], editingShift = null;
+let editShifts = [], editingShift = null, editMode = 'self';
+let proxyEditShifts = [];
 let proxyTarget = null, proxyStore = null;
 let proxyMonth = new Date().getMonth()+1, proxyYear = new Date().getFullYear();
 let proxySelected = {}, proxyShortage = {};
@@ -520,7 +536,9 @@ function setupApp() {
     document.getElementById('confirm-modal-do').onclick      = doConfirm;
     document.getElementById('confirm-modal-decline').onclick = doDecline;
     document.getElementById('confirm-modal-cancel').onclick  = () => document.getElementById('confirm-modal').classList.remove('show');
-    document.getElementById('confirm-notify-btn').onclick    = doNotify;
+    document.getElementById('confirm-notify-btn').onclick    = openNotifyList;
+    document.getElementById('notify-list-send').onclick      = doNotifyStore;
+    document.getElementById('notify-list-close').onclick     = () => document.getElementById('notify-list-modal').classList.remove('show');
   }
 
   initApplyTab();
@@ -689,14 +707,17 @@ function renderEditList() {
     const statusChip = confirmed ? ' <span class="shift-store" style="background:#eef5ff;color:#3182ce">確定済み</span>' : '';
     const actions = lock
       ? `<div class="shift-actions"><span style="font-size:12px;color:#888;">確定済みのため変更できません。変更は管理者にご連絡ください。</span></div>`
-      : `<div class="shift-actions"><button class="btn-edit" onclick="openEditModal('${s.id}','${s.date}','${s.storeId}','${s.start}','${s.end}')">時間変更</button><button class="btn-delete" onclick="confirmDelete('${s.id}','${s.date}')">削除</button></div>`;
+      : `<div class="shift-actions"><button class="btn-edit" onclick="openEditModal('${s.id}','${s.date}','${s.storeId}','${s.start}','${s.end}','self')">時間変更</button><button class="btn-delete" onclick="confirmDelete('${s.id}','${s.date}','self')">削除</button></div>`;
     item.innerHTML=`<div class="shift-item-header"><span class="shift-date">${s.date}（${DOW[dt.getDay()]}）</span><span class="shift-store">${STORE_NAME[s.storeId]||s.storeId}</span>${statusChip}</div><div class="shift-time">${s.start} 〜 ${s.end}</div>${actions}`;
     list.appendChild(item);
   });
 }
 
-function openEditModal(id,date,storeId,start,end) {
-  editingShift={id,date,storeId};
+// 編集後にどのリストを再読込するか
+function reloadEditList(mode) { return mode==='proxy' ? loadProxyEditShifts() : loadEditShifts(); }
+
+function openEditModal(id,date,storeId,start,end,mode) {
+  editingShift={id,date,storeId}; editMode = mode || 'self';
   document.getElementById('edit-modal-title').textContent=`${date}の時間変更`;
   buildPresets2('edit-start',startPresetsFor(storeId),start);
   buildPresets2('edit-end',endPresetsFor(storeId),end);
@@ -713,17 +734,38 @@ async function saveEditTime() {
   try {
     const data = await gasGet({ action:'updateShiftWeb', lineId, id:editingShift.id, start, end });
     if (data && !data.ok) alert(data.error || '変更できませんでした');
-    await loadEditShifts();
+    await reloadEditList(editMode);
   } catch(e) { alert('更新エラー: '+e.message); }
 }
 
-async function confirmDelete(id,date) {
+async function confirmDelete(id,date,mode) {
   if (!confirm(`${date}のシフトを削除しますか？`)) return;
   try {
     const data = await gasGet({ action:'deleteShiftWeb', lineId, id });
     if (data && !data.ok) alert(data.error || '削除できませんでした');
-    await loadEditShifts();
+    await reloadEditList(mode || 'self');
   } catch(e) { alert('削除エラー: '+e.message); }
+}
+
+// 代理：選択スタッフの登録済みシフトを一覧表示（管理者は確定済みも編集可）
+async function loadProxyEditShifts() {
+  const c = document.getElementById('proxy-edit-list');
+  if (!proxyTarget) { c.innerHTML='<div class="empty-state">スタッフ未選択</div>'; return; }
+  c.innerHTML='<div class="empty-state">読み込み中...</div>';
+  try {
+    const data = await gasGet({ action:'getShiftsWithId', lineId, month:proxyMonth, year:proxyYear, targetStaffId:proxyTarget.id });
+    proxyEditShifts = data.ok ? data.shifts : [];
+    if (!proxyEditShifts.length) { c.innerHTML='<div class="empty-state">この月の登録済みシフトはありません</div>'; return; }
+    c.innerHTML='';
+    proxyEditShifts.sort((a,b)=>{ const [am,ad]=a.date.split('/').map(Number); const [bm,bd]=b.date.split('/').map(Number); return am!==bm?am-bm:ad-bd; }).forEach(s=>{
+      const [m,d]=s.date.split('/').map(Number); const dt=new Date(proxyYear,m-1,d);
+      const confirmed = (s.status==='確定' || s.status==='確定済');
+      const statusChip = confirmed ? ' <span class="shift-store" style="background:#eef5ff;color:#3182ce">確定済み</span>' : '';
+      const item=document.createElement('div'); item.className='shift-item';
+      item.innerHTML=`<div class="shift-item-header"><span class="shift-date">${s.date}（${DOW[dt.getDay()]}）</span><span class="shift-store">${STORE_NAME[s.storeId]||s.storeId}</span>${statusChip}</div><div class="shift-time">${s.start} 〜 ${s.end}</div><div class="shift-actions"><button class="btn-edit" onclick="openEditModal('${s.id}','${s.date}','${s.storeId}','${s.start}','${s.end}','proxy')">時間変更</button><button class="btn-delete" onclick="confirmDelete('${s.id}','${s.date}','proxy')">削除</button></div>`;
+      c.appendChild(item);
+    });
+  } catch(e) { c.innerHTML='<div class="empty-state">読み込みエラー</div>'; }
 }
 
 // ============================================================
@@ -778,6 +820,7 @@ async function loadProxyData() {
     if (sd.ok) proxyShortage = sd.days;
   } catch(e) {}
   renderProxyCal();
+  loadProxyEditShifts(); // 選択スタッフの登録済みシフト（変更・削除）を表示
 }
 
 function renderProxyCal() {
@@ -946,28 +989,52 @@ async function loadConfirmData() {
   renderConfirmCal();
   try {
     const data = await gasGet({ action:'getConfirmCal', lineId, storeId:confirmStore.id, month:confirmMonth, year:confirmYear });
-    if (data.ok) { confirmDays = data.days || {}; confirmPendingNotify = data.pendingNotify || 0; }
+    if (data.ok) { confirmDays = data.days || {}; confirmPendingNotify = data.pendingNotifyStore || 0; }
   } catch(e) {}
   renderConfirmCal();
   renderNotifyBar();
 }
 
 function renderNotifyBar() {
+  document.getElementById('confirm-notify-store').textContent = (confirmStore?.name || '') + '：';
   document.getElementById('confirm-notify-count').textContent = confirmPendingNotify;
   document.getElementById('confirm-notify-bar').style.display = confirmPendingNotify > 0 ? 'flex' : 'none';
 }
 
-async function doNotify() {
+// 未通知リストを開く（この店舗ぶん）
+async function openNotifyList() {
   if (!confirmPendingNotify) return;
-  if (!confirm(`まだ通知していない確定シフト ${confirmPendingNotify}件を、スタッフ本人にLINE通知します。\nよろしいですか？`)) return;
-  const btn = document.getElementById('confirm-notify-btn');
+  const body = document.getElementById('notify-list-body');
+  document.getElementById('notify-list-sub').textContent = confirmStore.name + ' の未通知の確定';
+  document.getElementById('notify-list-send').textContent = `${confirmStore.name}の${confirmPendingNotify}件をまとめて通知`;
+  body.innerHTML = '<div class="empty-state">読み込み中...</div>';
+  document.getElementById('notify-list-modal').classList.add('show');
+  try {
+    const data = await gasGet({ action:'getPendingNotifyList', lineId, storeId:confirmStore.id });
+    const list = data.ok ? data.list : [];
+    if (!list.length) { body.innerHTML='<div class="empty-state">未通知の確定はありません</div>'; return; }
+    body.innerHTML='';
+    list.forEach(it => {
+      const row=document.createElement('div'); row.className='cf-row';
+      row.innerHTML=`<div class="cf-info"><div class="cf-name">${it.name}</div><div class="cf-time">${it.date}（${it.dow}） ${it.start} 〜 ${it.end}</div></div><div class="cf-chip" style="background:#fff3e0;color:#e67e22">未通知</div>`;
+      body.appendChild(row);
+    });
+  } catch(e) { body.innerHTML='<div class="empty-state">読み込みエラー</div>'; }
+}
+
+// この店舗の未通知ぶんをまとめて通知
+async function doNotifyStore() {
+  if (!confirmPendingNotify) return;
+  if (!confirm(`${confirmStore.name}の未通知の確定シフトを、スタッフ本人にLINE通知します。\nよろしいですか？`)) return;
+  const btn = document.getElementById('notify-list-send');
   btn.disabled = true; btn.textContent = '通知中...';
   try {
-    const data = await gasGet({ action:'notifyConfirmed', lineId });
+    const data = await gasGet({ action:'notifyConfirmed', lineId, storeId:confirmStore.id });
     if (data.ok) alert(`✅ ${data.notified}名に通知しました（${data.shiftCount}件）。`);
     else alert('通知エラー: ' + (data.error||'不明'));
   } catch(e) { alert('通知エラー: ' + e.message); }
-  btn.disabled = false; btn.textContent = 'まとめて通知';
+  btn.disabled = false;
+  document.getElementById('notify-list-modal').classList.remove('show');
   await loadConfirmData();
 }
 
@@ -1051,10 +1118,9 @@ async function doDecline() {
   btn.disabled = true; btn.textContent = '処理中...';
   try {
     const data = await gasGet({ action:'declineShifts', lineId, ids:JSON.stringify(ids) });
-    document.getElementById('confirm-modal').classList.remove('show');
-    if (data.ok) alert(`🗂 ${data.declined}件を見送りにしました。`);
-    else alert('エラー: ' + (data.error||'不明'));
-    await loadConfirmData();
+    if (!data.ok) { alert('エラー: ' + (data.error||'不明')); btn.disabled = false; return; }
+    await loadConfirmData();            // カレンダー・通知バナーを更新
+    openConfirmModal(confirmDayKey);    // モーダルは開いたまま。残りを続けて操作できる
   } catch(e) { alert('エラー: ' + e.message); updateCfBtn(); }
 }
 
@@ -1076,10 +1142,9 @@ async function doConfirm() {
   btn.disabled = true; btn.textContent = '確定中...';
   try {
     const data = await gasGet({ action:'confirmShifts', lineId, ids:JSON.stringify(ids) });
-    document.getElementById('confirm-modal').classList.remove('show');
-    if (data.ok) alert(`✅ ${data.confirmed}件を確定しました。\n通知はまだ送っていません。準備ができたら「まとめて通知」で送信してください。`);
-    else alert('確定エラー: ' + (data.error||'不明'));
-    await loadConfirmData();
+    if (!data.ok) { alert('確定エラー: ' + (data.error||'不明')); btn.disabled = false; return; }
+    await loadConfirmData();            // カレンダー・通知バナーを更新
+    openConfirmModal(confirmDayKey);    // モーダルは開いたまま。残りを続けて確定/見送りできる
   } catch(e) { alert('確定エラー: ' + e.message); updateCfBtn(); }
 }
 
