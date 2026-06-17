@@ -402,7 +402,6 @@ body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #33
     <div class="modal-title">未通知の確定シフト</div>
     <div class="modal-sub" id="notify-list-sub"></div>
     <div id="notify-list-body"></div>
-    <button class="btn-confirm" id="notify-list-send">この店舗をまとめて通知</button>
     <button class="btn-cancel"  id="notify-list-close">閉じる</button>
   </div>
 </div>
@@ -537,7 +536,6 @@ function setupApp() {
     document.getElementById('confirm-modal-decline').onclick = doDecline;
     document.getElementById('confirm-modal-cancel').onclick  = () => document.getElementById('confirm-modal').classList.remove('show');
     document.getElementById('confirm-notify-btn').onclick    = openNotifyList;
-    document.getElementById('notify-list-send').onclick      = doNotifyStore;
     document.getElementById('notify-list-close').onclick     = () => document.getElementById('notify-list-modal').classList.remove('show');
   }
 
@@ -989,53 +987,56 @@ async function loadConfirmData() {
   renderConfirmCal();
   try {
     const data = await gasGet({ action:'getConfirmCal', lineId, storeId:confirmStore.id, month:confirmMonth, year:confirmYear });
-    if (data.ok) { confirmDays = data.days || {}; confirmPendingNotify = data.pendingNotifyStore || 0; }
+    if (data.ok) { confirmDays = data.days || {}; confirmPendingNotify = data.pendingNotify || 0; }
   } catch(e) {}
   renderConfirmCal();
   renderNotifyBar();
 }
 
 function renderNotifyBar() {
-  document.getElementById('confirm-notify-store').textContent = (confirmStore?.name || '') + '：';
+  document.getElementById('confirm-notify-store').textContent = '';
   document.getElementById('confirm-notify-count').textContent = confirmPendingNotify;
   document.getElementById('confirm-notify-bar').style.display = confirmPendingNotify > 0 ? 'flex' : 'none';
 }
 
-// 未通知リストを開く（この店舗ぶん）
+// 未通知リストを開く（全店をまとめて表示。店舗ごとに区切り＋店舗別の通知ボタン）
 async function openNotifyList() {
-  if (!confirmPendingNotify) return;
   const body = document.getElementById('notify-list-body');
-  document.getElementById('notify-list-sub').textContent = confirmStore.name + ' の未通知の確定';
-  document.getElementById('notify-list-send').textContent = `${confirmStore.name}の${confirmPendingNotify}件をまとめて通知`;
+  document.getElementById('notify-list-sub').textContent = '確定したが、まだ通知していないシフト（全店）';
   body.innerHTML = '<div class="empty-state">読み込み中...</div>';
   document.getElementById('notify-list-modal').classList.add('show');
   try {
-    const data = await gasGet({ action:'getPendingNotifyList', lineId, storeId:confirmStore.id });
+    const data = await gasGet({ action:'getPendingNotifyList', lineId });   // storeId無し＝全店
     const list = data.ok ? data.list : [];
     if (!list.length) { body.innerHTML='<div class="empty-state">未通知の確定はありません</div>'; return; }
+    const byStore = {};
+    list.forEach(it => { (byStore[it.storeId] = byStore[it.storeId] || []).push(it); });
     body.innerHTML='';
-    list.forEach(it => {
-      const row=document.createElement('div'); row.className='cf-row';
-      row.innerHTML=`<div class="cf-info"><div class="cf-name">${it.name}</div><div class="cf-time">${it.date}（${it.dow}） ${it.start} 〜 ${it.end}</div></div><div class="cf-chip" style="background:#fff3e0;color:#e67e22">未通知</div>`;
-      body.appendChild(row);
+    Object.keys(byStore).forEach(sid => {
+      const items = byStore[sid];
+      const sec = document.createElement('div'); sec.style.marginBottom = '18px';
+      let html = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">`
+        + `<div style="font-weight:bold;font-size:14px">${STORE_NAME[sid]||sid}　${items.length}件</div>`
+        + `<button onclick="doNotifyStore('${sid}')" style="flex-shrink:0;padding:7px 14px;background:#06c755;color:#fff;border:none;border-radius:16px;font-size:12px;font-weight:bold;cursor:pointer">${STORE_NAME[sid]||sid}を通知</button></div>`;
+      items.forEach(it => {
+        html += `<div class="cf-row"><div class="cf-info"><div class="cf-name">${it.name}</div><div class="cf-time">${it.date}（${it.dow}） ${it.start} 〜 ${it.end}</div></div><div class="cf-chip" style="background:#fff3e0;color:#e67e22">未通知</div></div>`;
+      });
+      sec.innerHTML = html;
+      body.appendChild(sec);
     });
   } catch(e) { body.innerHTML='<div class="empty-state">読み込みエラー</div>'; }
 }
 
-// この店舗の未通知ぶんをまとめて通知
-async function doNotifyStore() {
-  if (!confirmPendingNotify) return;
-  if (!confirm(`${confirmStore.name}の未通知の確定シフトを、スタッフ本人にLINE通知します。\nよろしいですか？`)) return;
-  const btn = document.getElementById('notify-list-send');
-  btn.disabled = true; btn.textContent = '通知中...';
+// 指定店舗の未通知ぶんをまとめて通知
+async function doNotifyStore(storeId) {
+  if (!confirm(`${STORE_NAME[storeId]||storeId}の未通知の確定シフトを、スタッフ本人にLINE通知します。\nよろしいですか？`)) return;
   try {
-    const data = await gasGet({ action:'notifyConfirmed', lineId, storeId:confirmStore.id });
-    if (data.ok) alert(`✅ ${data.notified}名に通知しました（${data.shiftCount}件）。`);
-    else alert('通知エラー: ' + (data.error||'不明'));
-  } catch(e) { alert('通知エラー: ' + e.message); }
-  btn.disabled = false;
-  document.getElementById('notify-list-modal').classList.remove('show');
-  await loadConfirmData();
+    const data = await gasGet({ action:'notifyConfirmed', lineId, storeId });
+    if (data.ok) alert(`✅ ${STORE_NAME[storeId]||storeId}：${data.notified}名に通知しました（${data.shiftCount}件）。`);
+    else { alert('通知エラー: ' + (data.error||'不明')); return; }
+  } catch(e) { alert('通知エラー: ' + e.message); return; }
+  await loadConfirmData();   // バナー更新
+  await openNotifyList();    // リスト再描画（通知済みの店舗は消える）
 }
 
 function renderConfirmCal() {
