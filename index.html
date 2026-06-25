@@ -168,6 +168,28 @@ body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #33
 .time-custom input { flex: 1; padding: 10px; border: 2px solid #e2e8f0; border-radius: 10px; font-size: 16px; text-align: center; outline: none; }
 .time-custom input:focus { border-color: #06c755; }
 .modal-hr { border: none; border-top: 1px solid #eee; margin: 16px 0; }
+/* 昼/夜トグル */
+.part-toggle { display: flex; gap: 8px; margin-bottom: 18px; }
+.part-btn { flex: 1; padding: 11px; border: 2px solid #e2e8f0; border-radius: 12px; background: white; font-size: 14px; font-weight: bold; color: #888; cursor: pointer; transition: all 0.15s; }
+.part-btn.active { border-color: #06c755; background: #e8faf0; color: #059c43; }
+/* まとめて選択バー */
+.batch-bar { margin: 0 12px 8px; }
+.batch-toggle { width: 100%; padding: 9px; border: 2px dashed #06c755; border-radius: 12px; background: white; color: #059c43; font-size: 13px; font-weight: bold; cursor: pointer; }
+.batch-toggle.active { background: #06c755; border-style: solid; color: white; }
+.batch-tools { margin-top: 8px; padding: 12px; background: white; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+.batch-dows { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12px; color: #888; margin-bottom: 10px; }
+.dow-chip { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 2px solid #e2e8f0; border-radius: 50%; background: white; font-size: 13px; cursor: pointer; }
+.dow-chip.on { border-color: #06c755; background: #e8faf0; color: #059c43; font-weight: bold; }
+.batch-action { display: flex; align-items: center; gap: 8px; }
+.batch-action #batch-count { flex: 1; font-size: 13px; color: #555; font-weight: bold; }
+.batch-action button { padding: 8px 12px; border: none; border-radius: 16px; font-size: 12px; font-weight: bold; cursor: pointer; }
+#batch-apply { background: #06c755; color: white; }
+#batch-apply:disabled { background: #cfcfcf; cursor: not-allowed; }
+#batch-clear { background: #f5f5f5; color: #555; }
+.cal-cell.picked { background: #d7f5e3; box-shadow: inset 0 0 0 2px #06c755; }
+.sel-part { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 8px; margin-right: 6px; }
+.sel-part.day { background: #fff3d6; color: #b8860b; }
+.sel-part.night { background: #e6e9ff; color: #4555c0; }
 .btn-confirm { width: 100%; padding: 14px; background: #06c755; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: bold; cursor: pointer; margin-top: 8px; }
 .btn-cancel  { width: 100%; padding: 12px; background: #f5f5f5; color: #555; border: none; border-radius: 12px; font-size: 15px; cursor: pointer; margin-top: 8px; }
 </style>
@@ -195,6 +217,26 @@ body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #33
       </div>
     </div>
     <div class="store-tabs" id="store-tabs-apply"></div>
+    <div class="batch-bar">
+      <button class="batch-toggle" id="batch-toggle" onclick="toggleMultiMode()">🔁 まとめて選択</button>
+      <div class="batch-tools" id="batch-tools" style="display:none">
+        <div class="batch-dows">
+          毎週:
+          <span class="dow-chip" onclick="pickWeekday(0)">日</span>
+          <span class="dow-chip" onclick="pickWeekday(1)">月</span>
+          <span class="dow-chip" onclick="pickWeekday(2)">火</span>
+          <span class="dow-chip" onclick="pickWeekday(3)">水</span>
+          <span class="dow-chip" onclick="pickWeekday(4)">木</span>
+          <span class="dow-chip" onclick="pickWeekday(5)">金</span>
+          <span class="dow-chip" onclick="pickWeekday(6)">土</span>
+        </div>
+        <div class="batch-action">
+          <span id="batch-count">0日選択中</span>
+          <button id="batch-apply" onclick="openBatchModal()" disabled>時間をまとめて入力</button>
+          <button id="batch-clear" onclick="clearMulti()">クリア</button>
+        </div>
+      </div>
+    </div>
     <div class="cal-wrap">
       <div class="cal-header">
         <button class="cal-nav" id="apply-prev">‹</button>
@@ -364,6 +406,10 @@ body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #33
   <div class="modal">
     <div class="modal-title" id="modal-title"></div>
     <div class="modal-sub" id="modal-sub"></div>
+    <div class="part-toggle" id="modal-part-toggle" style="display:none">
+      <button type="button" class="part-btn" id="part-day"   onclick="setModalPart('day')">☀️ 昼の部</button>
+      <button type="button" class="part-btn" id="part-night" onclick="setModalPart('night')">🌙 夜の部</button>
+    </div>
     <div class="time-section">
       <div class="time-label">▶ 開始時間</div>
       <div class="time-presets" id="start-presets"></div>
@@ -433,10 +479,10 @@ body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #33
 const LIFF_ID       = '2010395925-JfheOL3d';
 const GAS_URL       = 'https://script.google.com/macros/s/AKfycbx-aqsCqJuKL1F-eClOgwiZfmIQDfvyVHWXxA8AQJjk5o4TAabhxKQoKTaO9NrOUcec/exec';
 const DOW           = ['日','月','火','水','木','金','土'];
-const START_PRESETS = ['17:00','17:30','18:00','18:30','19:00','20:00'];
+const START_PRESETS = ['17:00','17:30','18:00','18:30','19:00','19:30','20:00'];
 // 店舗別の開始時間プリセット（片町店は19:00開始 / 刻は16:30開始）
 const STORE_START_PRESETS = {
-  S001:['19:00','19:30','20:00','20:30','21:00','22:00'],
+  S001:['19:00','19:30','20:00','20:30','21:00','21:30','22:00'],
   S003:['16:30','17:00','17:30','18:00','18:30','19:00'],
 };
 function startPresetsFor(storeId) { return STORE_START_PRESETS[storeId] || START_PRESETS; }
@@ -448,6 +494,11 @@ const STORE_CLOSE   = { S001:'04:00', S002:'01:00', S003:'23:00' };
 const STORE_LAST = { S001:'4:00', S002:'25:00', S003:'23:30' };
 // 終了プリセット：通常の時間帯＋「ラスト」
 function endPresetsFor(storeId) { return END_PRESETS.concat([{ label:'ラスト', value: STORE_LAST[storeId] || STORE_CLOSE[storeId] || '24:00' }]); }
+// 「昼の部」設定：駅前店(S002)は土(6)・日(0)に昼営業 11:00〜17:00
+const STORE_DAY_PART = {
+  S002: { dows:[0,6], start:['11:00','11:30','12:00','12:30','13:00','13:30','14:00'], end:['15:00','15:30','16:00','16:30','17:00','17:30','18:00'], open:'11:00', close:'17:00' },
+};
+function dayPartFor(storeId, dow) { const c = STORE_DAY_PART[storeId]; return (c && c.dows.indexOf(dow) >= 0) ? c : null; }
 
 // ============================================================
 // 状態
@@ -455,6 +506,8 @@ function endPresetsFor(storeId) { return END_PRESETS.concat([{ label:'ラスト'
 let lineId = null, staffData = null;
 let applyStore = null, applyMonth = new Date().getMonth()+1, applyYear = new Date().getFullYear();
 let applySelected = {}, applyExisting = {}, applyShortage = {};
+let multiMode = false, multiPicked = {};                 // まとめて選択モード
+let pendingPart = null, modalStore = null, modalDate = null; // 昼/夜トグル用
 let editMonth = new Date().getMonth()+1, editYear = new Date().getFullYear();
 let editShifts = [], editingShift = null, editMode = 'self';
 let proxyEditShifts = [];
@@ -595,6 +648,7 @@ function initApplyTab() {
 
 async function loadApplyData() {
   applyExisting = {}; applyShortage = {};
+  if (multiMode) { multiPicked = {}; document.querySelectorAll('.dow-chip').forEach(x=>x.classList.remove('on')); updateBatchCount(); } // 月・店舗切替で選択をリセット
   renderApplyCal(); // 枠を即表示（データは後から反映）
   const [a, b] = await Promise.allSettled([
     gasGet({ action:'getShifts',  lineId, month: applyMonth }),
@@ -622,11 +676,13 @@ function renderApplyCal() {
     const sh    = applyShortage[key];
     const isShort = !!(sh && !sh.ok);
     const isPast = dt<today, isOor=dt>max, isToday=dt.getTime()===today.getTime();
+    const isPicked = multiMode && !!multiPicked[key];
     const c = document.createElement('div');
     let cls = 'cal-cell';
     if (isPast||isOor) cls += ' oor';
     if (isToday)       cls += ' today';
-    if (isSel)         cls += ' selected';
+    if (isPicked)      cls += ' picked';
+    else if (isSel)    cls += ' selected';
     else if (isEx)     cls += (applyExisting[key].confirmed ? ' has-shift' : ' pending');
     else if (isShort && !isPast && !isOor) cls += ' short';
     c.className = cls;
@@ -639,13 +695,20 @@ function renderApplyCal() {
       const b=document.createElement('div'); b.className='short-badge';
       b.textContent = sh.shortage>0 ? 'あと'+sh.shortage : (sh.missingPro ? '熟練' : '募集'); c.appendChild(b);
     }
-    if (isSel) { const b=document.createElement('div'); b.className='shift-badge'; const s=applySelected[key]; b.textContent=s.start+'〜'+s.end; c.appendChild(b); }
+    if (isPicked) { const b=document.createElement('div'); b.className='shift-badge'; b.textContent='✓'; c.appendChild(b); }
+    else if (isSel) { const b=document.createElement('div'); b.className='shift-badge'; const s=applySelected[key]; b.textContent=(s.part==='day'?'☀️':s.part==='night'?'🌙':'')+s.start+'〜'+s.end; c.appendChild(b); }
     if (!isPast&&!isOor) c.onclick=()=>tapApplyDate(applyMonth,d,key);
     grid.appendChild(c);
   }
 }
 
 function tapApplyDate(month,day,key) {
+  if (multiMode) {
+    const dt=new Date(applyYear,month-1,day);
+    if (multiPicked[key]) delete multiPicked[key];
+    else multiPicked[key]={month,day,dow:dt.getDay()};
+    renderApplyCal(); updateBatchCount(); return;
+  }
   if (applySelected[key]?.storeId===applyStore.id) { delete applySelected[key]; renderApplyCal(); renderApplyList(); updateApplyBtn(); return; }
   if (applyExisting[key]) {
     const dt=new Date(applyYear,month-1,day); const e=applyExisting[key];
@@ -673,10 +736,57 @@ function renderApplyList() {
   const c=document.getElementById('apply-selected');
   if (!items.length) { c.innerHTML='<div class="empty-state">日付をタップして追加</div>'; return; }
   c.innerHTML='';
-  items.forEach(s=>{ const key=`${s.month}/${s.day}`; const dt=new Date(applyYear,s.month-1,s.day); const row=document.createElement('div'); row.className='sel-item'; row.innerHTML=`<div class="sel-date">${s.month}/${s.day}（${DOW[dt.getDay()]}）</div><div class="sel-time">${s.start} 〜 ${s.end}</div><button class="btn-del-sel" onclick="delApplySel('${key}')">✕</button>`; c.appendChild(row); });
+  items.forEach(s=>{ const key=`${s.month}/${s.day}`; const dt=new Date(applyYear,s.month-1,s.day); const pb = s.part==='day'?'<span class="sel-part day">☀️昼</span>':s.part==='night'?'<span class="sel-part night">🌙夜</span>':''; const row=document.createElement('div'); row.className='sel-item'; row.innerHTML=`<div class="sel-date">${s.month}/${s.day}（${DOW[dt.getDay()]}）</div><div class="sel-time">${pb}${s.start} 〜 ${s.end}</div><button class="btn-del-sel" onclick="delApplySel('${key}')">✕</button>`; c.appendChild(row); });
 }
 function delApplySel(key) { delete applySelected[key]; renderApplyCal(); renderApplyList(); updateApplyBtn(); }
 function updateApplyBtn() { const n=Object.values(applySelected).filter(s=>s.storeId===applyStore?.id).length; const btn=document.getElementById('apply-submit'); btn.disabled=n===0; btn.textContent=`送信する（${n}件）`; }
+
+// --- まとめて選択（連続申請） ---
+function toggleMultiMode() {
+  multiMode = !multiMode;
+  multiPicked = {};
+  document.getElementById('batch-toggle').classList.toggle('active', multiMode);
+  document.getElementById('batch-toggle').textContent = multiMode ? '✓ まとめて選択中（タップで終了）' : '🔁 まとめて選択';
+  document.getElementById('batch-tools').style.display = multiMode ? 'block' : 'none';
+  document.querySelectorAll('.dow-chip').forEach(x=>x.classList.remove('on'));
+  renderApplyCal(); updateBatchCount();
+}
+function pickWeekday(dow) {
+  const today=new Date(); today.setHours(0,0,0,0);
+  const max=new Date(today.getTime()+62*24*60*60*1000);
+  const last=new Date(applyYear,applyMonth,0).getDate();
+  // 表示中の月の該当曜日（過去・期間外を除く）を集める
+  const keys=[];
+  for (let d=1; d<=last; d++) { const dt=new Date(applyYear,applyMonth-1,d); if(dt.getDay()===dow && dt>=today && dt<=max) keys.push({key:`${applyMonth}/${d}`,month:applyMonth,day:d,dow}); }
+  if (!keys.length) return;
+  const allOn = keys.every(k=>multiPicked[k.key]);
+  keys.forEach(k=>{ if(allOn) delete multiPicked[k.key]; else multiPicked[k.key]={month:k.month,day:k.day,dow:k.dow}; });
+  document.querySelectorAll('.dow-chip')[dow].classList.toggle('on', !allOn);
+  renderApplyCal(); updateBatchCount();
+}
+function clearMulti() {
+  multiPicked = {};
+  document.querySelectorAll('.dow-chip').forEach(x=>x.classList.remove('on'));
+  renderApplyCal(); updateBatchCount();
+}
+function updateBatchCount() {
+  const n=Object.keys(multiPicked).length;
+  document.getElementById('batch-count').textContent = `${n}日選択中`;
+  document.getElementById('batch-apply').disabled = n===0;
+}
+function openBatchModal() {
+  const days=Object.values(multiPicked);
+  if (!days.length) return;
+  pendingMode='applyBatch'; modalStore=applyStore;
+  const cfg=STORE_DAY_PART[applyStore.id];
+  const allEligible = !!cfg && days.every(d=>cfg.dows.indexOf(d.dow)>=0);
+  document.getElementById('modal-title').textContent=`まとめて入力（${days.length}日）`;
+  const tg=document.getElementById('modal-part-toggle');
+  if (allEligible) { tg.style.display='flex'; modalDate={month:days[0].month,day:days[0].day}; setModalPart('day'); }
+  else { tg.style.display='none'; pendingPart=null; renderModalPresets(applyStore, 3, 'night'); }
+  document.getElementById('start-custom').value=''; document.getElementById('end-custom').value='';
+  document.getElementById('modal').classList.add('show');
+}
 
 // ============================================================
 // ② 修正タブ
@@ -1169,22 +1279,60 @@ function showDone(label, saved, errors, mode) {
 function openModal(month, day, store) {
   const year = pendingMode==='proxy' ? proxyYear : applyYear;
   const dt=new Date(year,month-1,day);
+  modalStore=store; modalDate={month,day};
   document.getElementById('modal-title').textContent=`${month}/${day}（${DOW[dt.getDay()]}）`;
-  document.getElementById('modal-sub').textContent=(store?.name||'')+ ' ' +(store?.open||'')+'〜'+(store?.close||'');
-  buildPresets2('start', startPresetsFor(store?.id), store?.open||'18:00');
-  buildPresets2('end',   endPresetsFor(store?.id),   store?.close||'24:00');
+  const dp = dayPartFor(store?.id, dt.getDay());
+  const tg = document.getElementById('modal-part-toggle');
+  if (dp) { tg.style.display='flex'; setModalPart('day'); }          // 駅前×土日は昼/夜トグル（既定=昼）
+  else    { tg.style.display='none'; pendingPart=null; renderModalPresets(store, dt.getDay(), 'night'); }
   document.getElementById('start-custom').value='';
   document.getElementById('end-custom').value='';
   document.getElementById('modal').classList.add('show');
 }
-function closeModal(){ document.getElementById('modal').classList.remove('show'); pendingDate=null; }
+// 昼/夜どちらのプリセットを出すか
+function renderModalPresets(store, dow, part) {
+  const dp = dayPartFor(store?.id, dow);
+  if (part==='day' && dp) {
+    buildPresets2('start', dp.start, dp.open);
+    buildPresets2('end',   dp.end,   dp.close);
+    document.getElementById('modal-sub').textContent=(store?.name||'')+' ☀️昼の部 '+dp.open+'〜'+dp.close;
+  } else {
+    buildPresets2('start', startPresetsFor(store?.id), store?.open||'18:00');
+    buildPresets2('end',   endPresetsFor(store?.id),   store?.close||'24:00');
+    document.getElementById('modal-sub').textContent=(store?.name||'')+' '+(store?.open||'')+'〜'+(store?.close||'');
+  }
+}
+function setModalPart(part) {
+  pendingPart = part;
+  document.getElementById('part-day').classList.toggle('active', part==='day');
+  document.getElementById('part-night').classList.toggle('active', part==='night');
+  const year = pendingMode==='proxy' ? proxyYear : applyYear;
+  const dow = new Date(year, modalDate.month-1, modalDate.day).getDay();
+  renderModalPresets(modalStore, dow, part);
+  document.getElementById('start-custom').value='';
+  document.getElementById('end-custom').value='';
+}
+function closeModal(){ document.getElementById('modal').classList.remove('show'); pendingDate=null; if(pendingMode==='applyBatch') pendingMode='apply'; }
 
 function confirmTime() {
   const start=getTime2('start'), end=getTime2('end');
   if(!start){alert('開始時間を選んでください');return;}
   if(!end)  {alert('終了時間を選んでください');return;}
+  const part = (document.getElementById('modal-part-toggle').style.display!=='none') ? pendingPart : null;
+  // まとめて連続申請：選択した全日に同じ時間を適用
+  if (pendingMode==='applyBatch') {
+    Object.values(multiPicked).forEach(d=>{ applySelected[`${d.month}/${d.day}`]={month:d.month,day:d.day,start,end,storeId:applyStore.id,part}; });
+    multiPicked={}; multiMode=false;
+    document.getElementById('batch-tools').style.display='none';
+    document.getElementById('batch-toggle').classList.remove('active');
+    document.getElementById('batch-toggle').textContent='🔁 まとめて選択';
+    document.querySelectorAll('.dow-chip').forEach(x=>x.classList.remove('on'));
+    document.getElementById('modal').classList.remove('show');
+    renderApplyCal(); renderApplyList(); updateApplyBtn(); updateBatchCount();
+    pendingDate=null; pendingMode='apply'; return;
+  }
   const {month,day,key}=pendingDate;
-  const entry={month,day,start,end,storeId:(pendingMode==='proxy'?proxyStore:applyStore).id};
+  const entry={month,day,start,end,storeId:(pendingMode==='proxy'?proxyStore:applyStore).id,part};
   if(pendingMode==='proxy'){ proxySelected[key]=entry; document.getElementById('modal').classList.remove('show'); renderProxyCal(); }
   else { applySelected[key]=entry; document.getElementById('modal').classList.remove('show'); renderApplyCal(); renderApplyList(); updateApplyBtn(); }
   pendingDate=null;
