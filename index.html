@@ -76,10 +76,16 @@ body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #33
 .cal-cell.dayoff { background: #f0f0f0; }
 .cal-cell.dholiday { background: #ffebee; }
 .cal-cell.dopen { background: #e8faf0; }
+.cal-cell.dmeeting { background: #eef2ff; }
 .day-status { font-size: 9px; font-weight: bold; line-height: 1.2; margin-top: 1px; }
 .day-status.off  { color: #999; }
 .day-status.hol  { color: #e53e3e; }
 .day-status.open { color: #06c755; }
+.day-status.meet { color: #5b6ee1; }
+.days-mode { display: flex; gap: 8px; margin: 0 12px 10px; }
+.dmode-btn { flex: 1; padding: 9px 0; border-radius: 20px; border: 2px solid #ddd; background: white; font-size: 13px; font-weight: bold; cursor: pointer; transition: all 0.2s; }
+.dmode-btn.active { background: #5b6ee1; border-color: #5b6ee1; color: white; }
+.dmode-btn:disabled { opacity: .4; cursor: not-allowed; }
 
 /* 凡例 */
 .legend { display: flex; flex-wrap: wrap; gap: 10px; padding: 8px 16px; font-size: 11px; color: #666; border-top: 1px solid #f0f0f0; }
@@ -321,6 +327,10 @@ body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #33
   <!-- ④ 営業日設定タブ（管理者） -->
   <div id="tab-days" style="display:none">
     <div class="store-tabs" id="store-tabs-days"></div>
+    <div class="days-mode" id="days-mode">
+      <button class="dmode-btn active" id="dmode-normal" onclick="setDaysMode('normal')">休業 / 営業</button>
+      <button class="dmode-btn" id="dmode-meeting" onclick="setDaysMode('meeting')">🧑‍🤝‍🧑 ミーティング</button>
+    </div>
     <div class="cal-wrap">
       <div class="cal-header">
         <button class="cal-nav" id="days-prev">‹</button>
@@ -335,13 +345,19 @@ body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #33
         <span><span class="dot" style="background:#f0f0f0;border:1px solid #bbb"></span>定休</span>
         <span><span class="dot" style="background:#ffebee;border:1px solid #e53e3e"></span>臨時休業</span>
         <span><span class="dot" style="background:#e8faf0;border:1px solid #06c755"></span>臨時営業</span>
+        <span><span class="dot" style="background:#eef2ff;border:1px solid #5b6ee1"></span>ミーティング</span>
       </div>
     </div>
-    <div style="margin:0 12px 16px;padding:14px 16px;background:white;border-radius:12px;font-size:12px;color:#777;line-height:1.8;box-shadow:0 1px 4px rgba(0,0,0,0.08)">
+    <div id="days-help-normal" style="margin:0 12px 16px;padding:14px 16px;background:white;border-radius:12px;font-size:12px;color:#777;line-height:1.8;box-shadow:0 1px 4px rgba(0,0,0,0.08)">
       日付をタップして切り替えます：<br>
       ・通常の営業日 → <b style="color:#e53e3e">臨時休業</b><br>
       ・定休日 → <b style="color:#06c755">臨時営業</b><br>
       ・設定済みの日 → 元に戻す
+    </div>
+    <div id="days-help-meeting" style="display:none;margin:0 12px 16px;padding:14px 16px;background:white;border-radius:12px;font-size:12px;color:#777;line-height:1.8;box-shadow:0 1px 4px rgba(0,0,0,0.08)">
+      🧑‍🤝‍🧑 <b>ミーティングモード</b>：日付をタップで、その日を<b style="color:#5b6ee1">ミーティング日</b>に設定／解除します。<br>
+      店舗タブで<b>「全体」</b>を選ぶと全店まとめて設定できます。<br>
+      設定するとGoogleカレンダーにも予定が入ります（LINE通知はしません）。
     </div>
   </div>
 
@@ -515,7 +531,8 @@ let proxyTarget = null, proxyStore = null;
 let proxyMonth = new Date().getMonth()+1, proxyYear = new Date().getFullYear();
 let proxySelected = {}, proxyShortage = {};
 let daysStore = null, daysMonth = new Date().getMonth()+1, daysYear = new Date().getFullYear();
-let daysFixedOff = [], daysHolidays = new Set(), daysOpens = new Set();
+let daysFixedOff = [], daysHolidays = new Set(), daysOpens = new Set(), daysMeetings = new Set();
+let daysMode = 'normal';   // 'normal'（休業/営業）| 'meeting'（ミーティング日）
 let confirmStore = null, confirmMonth = new Date().getMonth()+1, confirmYear = new Date().getFullYear();
 let confirmDays = {}, confirmDayKey = null, confirmPendingNotify = 0;
 let pendingDate = null, pendingMode = null;
@@ -994,22 +1011,45 @@ async function submitProxy() {
 function initDaysTab() {
   const tabs = document.getElementById('store-tabs-days');
   if (!tabs.children.length) {
-    staffData.stores.forEach((store, i) => {
+    const stores = staffData.stores.concat([{ id:'ALL', name:'全体' }]);   // 末尾に「全体」タブ
+    stores.forEach((store, i) => {
       const btn = document.createElement('button');
       btn.className = 'store-tab' + (i===0?' active':'');
       btn.textContent = store.name;
-      btn.onclick = () => { daysStore = store; document.querySelectorAll('#store-tabs-days .store-tab').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); loadDaysData(); };
+      btn.onclick = () => {
+        daysStore = store;
+        document.querySelectorAll('#store-tabs-days .store-tab').forEach(b=>b.classList.remove('active'));
+        btn.classList.add('active');
+        applyDaysStoreMode();
+        loadDaysData();
+      };
       tabs.appendChild(btn);
     });
     daysStore = staffData.stores[0];
     document.getElementById('days-prev').onclick = () => { daysMonth--; if(daysMonth<1){daysMonth=12;daysYear--;} loadDaysData(); };
     document.getElementById('days-next').onclick = () => { daysMonth++; if(daysMonth>12){daysMonth=1;daysYear++;} loadDaysData(); };
   }
+  applyDaysStoreMode();
   loadDaysData();
 }
 
+// 「全体」タブはミーティング専用（休業/営業は店舗ごとの操作なので無効化）
+function applyDaysStoreMode() {
+  const isAll = daysStore && daysStore.id === 'ALL';
+  document.getElementById('dmode-normal').disabled = isAll;
+  setDaysMode(isAll ? 'meeting' : daysMode);
+}
+
+function setDaysMode(mode) {
+  daysMode = mode;
+  document.getElementById('dmode-normal').classList.toggle('active', mode==='normal');
+  document.getElementById('dmode-meeting').classList.toggle('active', mode==='meeting');
+  document.getElementById('days-help-normal').style.display  = mode==='normal' ? '' : 'none';
+  document.getElementById('days-help-meeting').style.display = mode==='meeting' ? '' : 'none';
+}
+
 async function loadDaysData() {
-  daysFixedOff = []; daysHolidays = new Set(); daysOpens = new Set();
+  daysFixedOff = []; daysHolidays = new Set(); daysOpens = new Set(); daysMeetings = new Set();
   renderDaysCal(); // 枠を即表示
   try {
     const data = await gasGet({ action:'getDayStatus', lineId, storeId: daysStore.id, month: daysMonth });
@@ -1017,6 +1057,7 @@ async function loadDaysData() {
       daysFixedOff = data.fixedOff || [];
       daysHolidays = new Set(data.holidays || []);
       daysOpens    = new Set(data.specialOpens || []);
+      daysMeetings = new Set(data.meetings || []);
     }
   } catch(e) {}
   renderDaysCal();
@@ -1037,13 +1078,15 @@ function renderDaysCal() {
     const isOpen = daysOpens.has(key);
     const isHol  = daysHolidays.has(key);
     const isFix  = daysFixedOff.includes(dt.getDay());
+    const isMeet = daysMeetings.has(key);
     const c = document.createElement('div');
     let cls = 'cal-cell';
     if (isPast) cls += ' oor';
     if (isToday) cls += ' today';
-    if (isOpen)      cls += ' dopen';
-    else if (isHol)  cls += ' dholiday';
-    else if (isFix)  cls += ' dayoff';
+    if (isOpen)       cls += ' dopen';
+    else if (isHol)   cls += ' dholiday';
+    else if (isMeet)  cls += ' dmeeting';
+    else if (isFix)   cls += ' dayoff';
     c.className = cls;
     const num=document.createElement('div'); num.className='day-num'; num.textContent=d; c.appendChild(num);
     let label='', lcls='';
@@ -1051,6 +1094,7 @@ function renderDaysCal() {
     else if (isHol)  { label='休業'; lcls='hol'; }
     else if (isFix)  { label='定休'; lcls='off'; }
     if (label) { const b=document.createElement('div'); b.className='day-status '+lcls; b.textContent=label; c.appendChild(b); }
+    if (isMeet) { const b=document.createElement('div'); b.className='day-status meet'; b.textContent='会議'; c.appendChild(b); }
     if (!isPast) c.onclick=()=>tapDaysDate(d,key);
     grid.appendChild(c);
   }
@@ -1058,6 +1102,24 @@ function renderDaysCal() {
 
 async function tapDaysDate(day, key) {
   const dt = new Date(daysYear, daysMonth-1, day); const dow = dt.getDay();
+  const isMeet = daysMeetings.has(key);
+
+  // ── ミーティングモード ──
+  if (daysMode === 'meeting') {
+    const label = daysStore.id === 'ALL' ? '全店' : daysStore.name;
+    const msg = isMeet
+      ? `${daysMonth}/${day}（${DOW[dow]}）の${label}のミーティングを解除しますか？`
+      : `${daysMonth}/${day}（${DOW[dow]}）を${label}のミーティング日に設定しますか？\n（Googleカレンダーにも予定が入ります）`;
+    if (!confirm(msg)) return;
+    try {
+      await gasGet({ action:'setMeeting', lineId, storeId:daysStore.id, month:daysMonth, day, on: isMeet ? '0' : '1' });
+      await loadDaysData();
+    } catch(e) { alert('変更エラー: '+e.message); }
+    return;
+  }
+
+  // ── 通常モード（休業/営業）※「全体」タブでは無効 ──
+  if (isMeet) { alert('この日はミーティング日です。解除は「🧑‍🤝‍🧑 ミーティング」モードで行ってください。'); return; }
   const isOpen = daysOpens.has(key), isHol = daysHolidays.has(key), isFix = daysFixedOff.includes(dow);
   let type, msg;
   if (isOpen)      { type='normal';  msg=`${daysMonth}/${day}（${DOW[dow]}）の臨時営業を取り消し、定休日に戻しますか？`; }
@@ -1109,10 +1171,10 @@ function renderNotifyBar() {
   document.getElementById('confirm-notify-bar').style.display = confirmPendingNotify > 0 ? 'flex' : 'none';
 }
 
-// 未通知リストを開く（全店をまとめて表示。店舗ごとに区切り＋店舗別の通知ボタン）
+// 未通知リストを開く（全店・店舗ごと。スタッフ別にチェックを付けて選んだ人だけ通知できる）
 async function openNotifyList() {
   const body = document.getElementById('notify-list-body');
-  document.getElementById('notify-list-sub').textContent = '確定したが、まだ通知していないシフト（全店）';
+  document.getElementById('notify-list-sub').textContent = '送りたい人だけチェックを付けて通知できます（初期は全員ON）';
   body.innerHTML = '<div class="empty-state">読み込み中...</div>';
   document.getElementById('notify-list-modal').classList.add('show');
   try {
@@ -1123,13 +1185,19 @@ async function openNotifyList() {
     list.forEach(it => { (byStore[it.storeId] = byStore[it.storeId] || []).push(it); });
     body.innerHTML='';
     Object.keys(byStore).forEach(sid => {
-      const items = byStore[sid];
+      // スタッフごとにまとめる（1人1チェック）
+      const byStaff = {};
+      byStore[sid].forEach(it => { (byStaff[it.staffId] = byStaff[it.staffId] || { name:it.name, rows:[] }).rows.push(it); });
       const sec = document.createElement('div'); sec.style.marginBottom = '18px';
       let html = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">`
-        + `<div style="font-weight:bold;font-size:14px">${STORE_NAME[sid]||sid}　${items.length}件</div>`
-        + `<button onclick="doNotifyStore('${sid}')" style="flex-shrink:0;padding:7px 14px;background:#06c755;color:#fff;border:none;border-radius:16px;font-size:12px;font-weight:bold;cursor:pointer">${STORE_NAME[sid]||sid}を通知</button></div>`;
-      items.forEach(it => {
-        html += `<div class="cf-row"><div class="cf-info"><div class="cf-name">${it.name}</div><div class="cf-time">${it.date}（${it.dow}） ${it.start} 〜 ${it.end}</div></div><div class="cf-chip" style="background:#fff3e0;color:#e67e22">未通知</div></div>`;
+        + `<div style="font-weight:bold;font-size:14px">${STORE_NAME[sid]||sid}　${Object.keys(byStaff).length}名</div>`
+        + `<button onclick="doNotifyStore('${sid}')" style="flex-shrink:0;padding:7px 14px;background:#06c755;color:#fff;border:none;border-radius:16px;font-size:12px;font-weight:bold;cursor:pointer">選択した人に通知</button></div>`;
+      Object.keys(byStaff).forEach(stid => {
+        const g = byStaff[stid];
+        const times = g.rows.map(r => `${r.date}（${r.dow}） ${r.start} 〜 ${r.end}`).join('<br>');
+        html += `<label class="cf-row" style="cursor:pointer;align-items:center">`
+          + `<input type="checkbox" class="notif-chk" data-store="${sid}" data-staffid="${stid}" checked style="width:20px;height:20px;margin-right:10px;flex-shrink:0;accent-color:#06c755">`
+          + `<div class="cf-info"><div class="cf-name">${g.name}</div><div class="cf-time">${times}</div></div></label>`;
       });
       sec.innerHTML = html;
       body.appendChild(sec);
@@ -1137,16 +1205,19 @@ async function openNotifyList() {
   } catch(e) { body.innerHTML='<div class="empty-state">読み込みエラー</div>'; }
 }
 
-// 指定店舗の未通知ぶんをまとめて通知
+// チェックした人だけに通知（店舗単位のボタン）
 async function doNotifyStore(storeId) {
-  if (!confirm(`${STORE_NAME[storeId]||storeId}の未通知の確定シフトを、スタッフ本人にLINE通知します。\nよろしいですか？`)) return;
+  const checks = Array.from(document.querySelectorAll(`.notif-chk[data-store="${storeId}"]`));
+  const staffIds = checks.filter(c => c.checked).map(c => c.dataset.staffid);
+  if (!staffIds.length) { alert('通知する人にチェックを付けてください。'); return; }
+  if (!confirm(`${STORE_NAME[storeId]||storeId}：選択した${staffIds.length}名にLINEで確定通知を送ります。\nよろしいですか？`)) return;
   try {
-    const data = await gasGet({ action:'notifyConfirmed', lineId, storeId });
+    const data = await gasGet({ action:'notifyConfirmed', lineId, storeId, staffIds: JSON.stringify(staffIds) });
     if (data.ok) alert(`✅ ${STORE_NAME[storeId]||storeId}：${data.notified}名に通知しました（${data.shiftCount}件）。`);
     else { alert('通知エラー: ' + (data.error||'不明')); return; }
   } catch(e) { alert('通知エラー: ' + e.message); return; }
   await loadConfirmData();   // バナー更新
-  await openNotifyList();    // リスト再描画（通知済みの店舗は消える）
+  await openNotifyList();    // リスト再描画（通知済みの人は消える）
 }
 
 function renderConfirmCal() {
