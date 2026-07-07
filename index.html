@@ -507,9 +507,34 @@ const STORE_NAME    = { S001:'片町店', S002:'駅前店', S003:'刻' };
 const STORE_OPEN    = { S001:'19:00', S002:'18:00', S003:'16:30' };
 const STORE_CLOSE   = { S001:'04:00', S002:'01:00', S003:'23:00' };
 // 「ラスト」を押したときに入る時刻（片付け後に退勤＝各店の実際の終わり）
-const STORE_LAST = { S001:'4:00', S002:'25:00', S003:'23:30' };
+// 内部標準は24時超え表記（4:00ではなく28:00）。表示はdispT/dispEndで「翌4:00」に変換する
+const STORE_LAST = { S001:'28:00', S002:'25:00', S003:'23:30' };
 // 終了プリセット：通常の時間帯＋「ラスト」
 function endPresetsFor(storeId) { return END_PRESETS.concat([{ label:'ラスト', value: STORE_LAST[storeId] || STORE_CLOSE[storeId] || '24:00' }]); }
+
+// ---- 深夜時刻の内部標準（25:00形式）と表示用（翌1:00形式） ----
+// 終了が開始以前（19:00-1:00等）は翌日扱いで+24して吸収する
+function normEnd(start, end) {
+  if (!end) return end;
+  const em = String(end).match(/^(\d{1,2}):(\d{2})$/);
+  if (!em) return end;
+  let eh = parseInt(em[1], 10);
+  const sm = String(start || '').match(/^(\d{1,2}):(\d{2})$/);
+  if (sm && eh < 24) {
+    const sMin = parseInt(sm[1], 10) * 60 + parseInt(sm[2], 10);
+    const eMin = eh * 60 + parseInt(em[2], 10);
+    if (eMin <= sMin) eh += 24;
+  }
+  return eh + ':' + em[2];
+}
+// 25:00以降を「翌1:00」表記に（スタッフが見る場所は必ずこちらを通す。24:00はそのまま）
+function dispT(t) {
+  const m = String(t || '').match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return t;
+  const h = parseInt(m[1], 10);
+  return h >= 25 ? ('翌' + (h - 24) + ':' + m[2]) : t;
+}
+function dispEnd(start, end) { return dispT(normEnd(start, end)); }
 // 「昼の部」設定：駅前店(S002)は土(6)・日(0)に昼営業 11:00〜17:00
 const STORE_DAY_PART = {
   S002: { dows:[0,6], start:['11:00','11:30','12:00','12:30','13:00','13:30','14:00'], end:['15:00','15:30','16:00','16:30','17:00','17:30','18:00'], open:'11:00', close:'17:00' },
@@ -707,13 +732,13 @@ function renderApplyCal() {
     if (isEx && !isSel) {
       const e=applyExisting[key];
       const b=document.createElement('div'); b.className=e.confirmed?'shift-exist-badge':'shift-pending-badge';
-      b.textContent=(e.confirmed?'':'申)')+e.start+'\n〜'+e.end; c.appendChild(b);
+      b.textContent=(e.confirmed?'':'申)')+e.start+'\n〜'+dispEnd(e.start,e.end); c.appendChild(b);
     } else if (isShort && !isSel && !isPast && !isOor) {
       const b=document.createElement('div'); b.className='short-badge';
       b.textContent = sh.shortage>0 ? 'あと'+sh.shortage : (sh.missingPro ? '熟練' : '募集'); c.appendChild(b);
     }
     if (isPicked) { const b=document.createElement('div'); b.className='shift-badge'; b.textContent='✓'; c.appendChild(b); }
-    else if (isSel) { const b=document.createElement('div'); b.className='shift-badge'; const s=applySelected[key]; b.textContent=(s.part==='day'?'☀️':s.part==='night'?'🌙':'')+s.start+'〜'+s.end; c.appendChild(b); }
+    else if (isSel) { const b=document.createElement('div'); b.className='shift-badge'; const s=applySelected[key]; b.textContent=(s.part==='day'?'☀️':s.part==='night'?'🌙':'')+s.start+'〜'+dispEnd(s.start,s.end); c.appendChild(b); }
     if (!isPast&&!isOor) c.onclick=()=>tapApplyDate(applyMonth,d,key);
     grid.appendChild(c);
   }
@@ -729,7 +754,7 @@ function tapApplyDate(month,day,key) {
   if (applySelected[key]?.storeId===applyStore.id) { delete applySelected[key]; renderApplyCal(); renderApplyList(); updateApplyBtn(); return; }
   if (applyExisting[key]) {
     const dt=new Date(applyYear,month-1,day); const e=applyExisting[key];
-    if (!confirm(`📅 ${month}/${day}（${DOW[dt.getDay()]}）のシフト\n${applyStore.name}\n\n🕒 ${e.start} 〜 ${e.end}\n\nこの日にもう一件 希望を追加しますか？`)) return;
+    if (!confirm(`📅 ${month}/${day}（${DOW[dt.getDay()]}）のシフト\n${applyStore.name}\n\n🕒 ${e.start} 〜 ${dispEnd(e.start, e.end)}\n\nこの日にもう一件 希望を追加しますか？`)) return;
   }
   pendingDate={month,day,key}; pendingMode='apply';
   openModal(month,day,applyStore);
@@ -753,7 +778,7 @@ function renderApplyList() {
   const c=document.getElementById('apply-selected');
   if (!items.length) { c.innerHTML='<div class="empty-state">日付をタップして追加</div>'; return; }
   c.innerHTML='';
-  items.forEach(s=>{ const key=`${s.month}/${s.day}`; const dt=new Date(applyYear,s.month-1,s.day); const pb = s.part==='day'?'<span class="sel-part day">☀️昼</span>':s.part==='night'?'<span class="sel-part night">🌙夜</span>':''; const row=document.createElement('div'); row.className='sel-item'; row.innerHTML=`<div class="sel-date">${s.month}/${s.day}（${DOW[dt.getDay()]}）</div><div class="sel-time">${pb}${s.start} 〜 ${s.end}</div><button class="btn-del-sel" onclick="delApplySel('${key}')">✕</button>`; c.appendChild(row); });
+  items.forEach(s=>{ const key=`${s.month}/${s.day}`; const dt=new Date(applyYear,s.month-1,s.day); const pb = s.part==='day'?'<span class="sel-part day">☀️昼</span>':s.part==='night'?'<span class="sel-part night">🌙夜</span>':''; const row=document.createElement('div'); row.className='sel-item'; row.innerHTML=`<div class="sel-date">${s.month}/${s.day}（${DOW[dt.getDay()]}）</div><div class="sel-time">${pb}${s.start} 〜 ${dispEnd(s.start, s.end)}</div><button class="btn-del-sel" onclick="delApplySel('${key}')">✕</button>`; c.appendChild(row); });
 }
 function delApplySel(key) { delete applySelected[key]; renderApplyCal(); renderApplyList(); updateApplyBtn(); }
 function updateApplyBtn() { const n=Object.values(applySelected).filter(s=>s.storeId===applyStore?.id).length; const btn=document.getElementById('apply-submit'); btn.disabled=n===0; btn.textContent=`送信する（${n}件）`; }
@@ -833,7 +858,7 @@ function renderEditList() {
     const actions = lock
       ? `<div class="shift-actions"><span style="font-size:12px;color:#888;">確定済みのため変更できません。変更は管理者にご連絡ください。</span></div>`
       : `<div class="shift-actions"><button class="btn-edit" onclick="openEditModal('${s.id}','${s.date}','${s.storeId}','${s.start}','${s.end}','self')">時間変更</button><button class="btn-delete" onclick="confirmDelete('${s.id}','${s.date}','self')">削除</button></div>`;
-    item.innerHTML=`<div class="shift-item-header"><span class="shift-date">${s.date}（${DOW[dt.getDay()]}）</span><span class="shift-store">${STORE_NAME[s.storeId]||s.storeId}</span>${statusChip}</div><div class="shift-time">${s.start} 〜 ${s.end}</div>${actions}`;
+    item.innerHTML=`<div class="shift-item-header"><span class="shift-date">${s.date}（${DOW[dt.getDay()]}）</span><span class="shift-store">${STORE_NAME[s.storeId]||s.storeId}</span>${statusChip}</div><div class="shift-time">${s.start} 〜 ${dispEnd(s.start, s.end)}</div>${actions}`;
     list.appendChild(item);
   });
 }
@@ -845,7 +870,7 @@ function openEditModal(id,date,storeId,start,end,mode) {
   editingShift={id,date,storeId}; editMode = mode || 'self';
   document.getElementById('edit-modal-title').textContent=`${date}の時間変更`;
   buildPresets2('edit-start',startPresetsFor(storeId),start);
-  buildPresets2('edit-end',endPresetsFor(storeId),end);
+  buildPresets2('edit-end',endPresetsFor(storeId),normEnd(start,end)); // 旧「1:00」形式でもプリセット既定が一致するよう正規化
   document.getElementById('edit-start-custom').value='';
   document.getElementById('edit-end-custom').value='';
   document.getElementById('edit-modal').classList.add('show');
@@ -887,7 +912,7 @@ async function loadProxyEditShifts() {
       const confirmed = (s.status==='確定' || s.status==='確定済');
       const statusChip = confirmed ? ' <span class="shift-store" style="background:#eef5ff;color:#3182ce">確定済み</span>' : '';
       const item=document.createElement('div'); item.className='shift-item';
-      item.innerHTML=`<div class="shift-item-header"><span class="shift-date">${s.date}（${DOW[dt.getDay()]}）</span><span class="shift-store">${STORE_NAME[s.storeId]||s.storeId}</span>${statusChip}</div><div class="shift-time">${s.start} 〜 ${s.end}</div><div class="shift-actions"><button class="btn-edit" onclick="openEditModal('${s.id}','${s.date}','${s.storeId}','${s.start}','${s.end}','proxy')">時間変更</button><button class="btn-delete" onclick="confirmDelete('${s.id}','${s.date}','proxy')">削除</button></div>`;
+      item.innerHTML=`<div class="shift-item-header"><span class="shift-date">${s.date}（${DOW[dt.getDay()]}）</span><span class="shift-store">${STORE_NAME[s.storeId]||s.storeId}</span>${statusChip}</div><div class="shift-time">${s.start} 〜 ${dispEnd(s.start, s.end)}</div><div class="shift-actions"><button class="btn-edit" onclick="openEditModal('${s.id}','${s.date}','${s.storeId}','${s.start}','${s.end}','proxy')">時間変更</button><button class="btn-delete" onclick="confirmDelete('${s.id}','${s.date}','proxy')">削除</button></div>`;
       c.appendChild(item);
     });
   } catch(e) { c.innerHTML='<div class="empty-state">読み込みエラー</div>'; }
@@ -968,7 +993,7 @@ function renderProxyCal() {
     else if(isShort && !isPast) cls+=' short';
     c.className=cls;
     const num=document.createElement('div');num.className='day-num';num.textContent=d;c.appendChild(num);
-    if(isSel){const b=document.createElement('div');b.className='shift-badge';const s=proxySelected[key];b.textContent=s.start+'〜'+s.end;c.appendChild(b);}
+    if(isSel){const b=document.createElement('div');b.className='shift-badge';const s=proxySelected[key];b.textContent=s.start+'〜'+dispEnd(s.start,s.end);c.appendChild(b);}
     else if(isShort && !isPast){const b=document.createElement('div');b.className='short-badge';b.textContent=sh.shortage>0?'あと'+sh.shortage:(sh.missingPro?'熟練':'募集');c.appendChild(b);}
     if(!isPast) c.onclick=()=>tapProxyDate(proxyMonth,d,key);
     grid.appendChild(c);
@@ -987,7 +1012,7 @@ function renderProxyList() {
   const c=document.getElementById('proxy-selected');
   if(!items.length){c.innerHTML='<div class="empty-state">日付をタップして追加</div>'; const btn=document.getElementById('proxy-submit'); btn.disabled=true; btn.textContent='代理登録する（0件）'; return;}
   c.innerHTML='';
-  items.forEach(s=>{const key=`${s.month}/${s.day}`;const dt=new Date(proxyYear,s.month-1,s.day);const row=document.createElement('div');row.className='sel-item';row.innerHTML=`<div class="sel-date">${s.month}/${s.day}（${DOW[dt.getDay()]}）</div><div class="sel-time">${s.start} 〜 ${s.end}</div><button class="btn-del-sel" onclick="delProxySel('${key}')">✕</button>`;c.appendChild(row);});
+  items.forEach(s=>{const key=`${s.month}/${s.day}`;const dt=new Date(proxyYear,s.month-1,s.day);const row=document.createElement('div');row.className='sel-item';row.innerHTML=`<div class="sel-date">${s.month}/${s.day}（${DOW[dt.getDay()]}）</div><div class="sel-time">${s.start} 〜 ${dispEnd(s.start, s.end)}</div><button class="btn-del-sel" onclick="delProxySel('${key}')">✕</button>`;c.appendChild(row);});
   const n=items.length; const btn=document.getElementById('proxy-submit'); btn.disabled=n===0; btn.textContent=`代理登録する（${n}件）`;
 }
 function delProxySel(key){delete proxySelected[key];renderProxyCal();}
@@ -1194,7 +1219,7 @@ async function openNotifyList() {
         + `<button onclick="doNotifyStore('${sid}')" style="flex-shrink:0;padding:7px 14px;background:#06c755;color:#fff;border:none;border-radius:16px;font-size:12px;font-weight:bold;cursor:pointer">選択した人に通知</button></div>`;
       Object.keys(byStaff).forEach(stid => {
         const g = byStaff[stid];
-        const times = g.rows.map(r => `${r.date}（${r.dow}） ${r.start} 〜 ${r.end}`).join('<br>');
+        const times = g.rows.map(r => `${r.date}（${r.dow}） ${r.start} 〜 ${dispEnd(r.start, r.end)}`).join('<br>');
         html += `<label class="cf-row" style="cursor:pointer;align-items:center">`
           + `<input type="checkbox" class="notif-chk" data-store="${sid}" data-staffid="${stid}" checked style="width:20px;height:20px;margin-right:10px;flex-shrink:0;accent-color:#06c755">`
           + `<div class="cf-info"><div class="cf-name">${g.name}</div><div class="cf-time">${times}</div></div></label>`;
@@ -1265,13 +1290,13 @@ function openConfirmModal(key) {
     if (it.rest) {
       row.innerHTML = `<div style="width:22px;flex-shrink:0"></div><div class="cf-info"><div class="cf-name" style="color:#aaa">${skill}${it.name}</div></div><div class="cf-chip" style="background:#f0f0f0;color:#999">休み</div>`;
     } else if (it.declined) {
-      row.innerHTML = `<div style="width:22px;flex-shrink:0"></div><div class="cf-info"><div class="cf-name" style="color:#aaa">${skill}${it.name}</div><div class="cf-time" style="color:#bbb">${it.start} 〜 ${it.end}</div></div><div class="cf-chip" style="background:#f0f0f0;color:#999">見送り</div><button class="cf-undo" onclick="revertOne('${it.id}')">取消</button>`;
+      row.innerHTML = `<div style="width:22px;flex-shrink:0"></div><div class="cf-info"><div class="cf-name" style="color:#aaa">${skill}${it.name}</div><div class="cf-time" style="color:#bbb">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip" style="background:#f0f0f0;color:#999">見送り</div><button class="cf-undo" onclick="revertOne('${it.id}')">取消</button>`;
     } else if (it.confirmed && it.notified) {
-      row.innerHTML = `<div style="width:22px;flex-shrink:0;text-align:center;color:#3182ce;font-weight:bold">✓</div><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${it.end}</div></div><div class="cf-chip conf">通知済み</div>`;
+      row.innerHTML = `<div style="width:22px;flex-shrink:0;text-align:center;color:#3182ce;font-weight:bold">✓</div><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip conf">通知済み</div>`;
     } else if (it.confirmed) {
-      row.innerHTML = `<div style="width:22px;flex-shrink:0;text-align:center;color:#3182ce;font-weight:bold">✓</div><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${it.end}</div></div><div class="cf-chip" style="background:#fff3e0;color:#e67e22">確定・未通知</div><button class="cf-undo" onclick="revertOne('${it.id}')">取消</button>`;
+      row.innerHTML = `<div style="width:22px;flex-shrink:0;text-align:center;color:#3182ce;font-weight:bold">✓</div><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip" style="background:#fff3e0;color:#e67e22">確定・未通知</div><button class="cf-undo" onclick="revertOne('${it.id}')">取消</button>`;
     } else {
-      row.innerHTML = `<input type="checkbox" class="cf-check" value="${it.id}" checked onchange="updateCfBtn()"><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${it.end}</div></div><div class="cf-chip pend">申請中</div>`;
+      row.innerHTML = `<input type="checkbox" class="cf-check" value="${it.id}" checked onchange="updateCfBtn()"><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip pend">申請中</div>`;
     }
     list.appendChild(row);
   });
@@ -1370,7 +1395,7 @@ function renderModalPresets(store, dow, part) {
   } else {
     buildPresets2('start', startPresetsFor(store?.id), store?.open||'18:00');
     buildPresets2('end',   endPresetsFor(store?.id),   store?.close||'24:00');
-    document.getElementById('modal-sub').textContent=(store?.name||'')+' '+(store?.open||'')+'〜'+(store?.close||'');
+    document.getElementById('modal-sub').textContent=(store?.name||'')+' '+(store?.open||'')+'〜'+dispEnd(store?.open, store?.close||'');
   }
 }
 function setModalPart(part) {
@@ -1416,7 +1441,7 @@ function buildPresets2(type, times, def) {
   const c=document.getElementById(type+'-presets'); c.innerHTML='';
   let selected=false;
   times.forEach(t=>{
-    const label = (typeof t==='object') ? t.label : t;
+    const label = dispT((typeof t==='object') ? t.label : t); // ボタン表示は「翌1:00」形式（値は内部形式のまま）
     const value = (typeof t==='object') ? t.value : t;
     const isDef = !selected && value===def;
     if (isDef) selected=true;
