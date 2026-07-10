@@ -509,13 +509,16 @@ const STORE_CLOSE   = { S001:'04:00', S002:'01:00', S003:'23:00' };
 // 「ラスト」を押したときに入る時刻（片付け後に退勤＝各店の実際の終わり）
 // 内部標準は24時超え表記（4:00ではなく28:00）。表示はdispT/dispEndで「翌4:00」に変換する
 const STORE_LAST = { S001:'28:00', S002:'25:00', S003:'23:30' };
-// 終了プリセット：通常の時間帯＋「ラスト」
-function endPresetsFor(storeId) { return END_PRESETS.concat([{ label:'ラスト', value: STORE_LAST[storeId] || STORE_CLOSE[storeId] || '24:00' }]); }
+// 「状況次第」＝店内・予約・片付け・責任者判断で退勤する勤務条件（固定退勤時刻なし）。時刻ではないセンチネル。
+const FLEX_END_LABEL = '状況次第';
+// 終了プリセット：通常の時間帯＋「ラスト」＋「状況次第」（ラストと状況次第は別の選択肢として両方出す）
+function endPresetsFor(storeId) { return END_PRESETS.concat([{ label:'ラスト', value: STORE_LAST[storeId] || STORE_CLOSE[storeId] || '24:00' }, { label: FLEX_END_LABEL, value: FLEX_END_LABEL }]); }
 
 // ---- 深夜時刻の内部標準（25:00形式）と表示用（翌1:00形式） ----
 // 終了が開始以前（19:00-1:00等）は翌日扱いで+24して吸収する
 function normEnd(start, end) {
   if (!end) return end;
+  if (end === FLEX_END_LABEL) return end;   // 「状況次第」は時刻ではないので正規化しない
   const em = String(end).match(/^(\d{1,2}):(\d{2})$/);
   if (!em) return end;
   let eh = parseInt(em[1], 10);
@@ -529,6 +532,7 @@ function normEnd(start, end) {
 }
 // 25:00以降を「翌1:00」表記に（スタッフが見る場所は必ずこちらを通す。24:00はそのまま）
 function dispT(t) {
+  if (t === FLEX_END_LABEL) return t;   // 「状況次第」はそのまま表示
   const m = String(t || '').match(/^(\d{1,2}):(\d{2})$/);
   if (!m) return t;
   const h = parseInt(m[1], 10);
@@ -1238,8 +1242,9 @@ async function doNotifyStore(storeId) {
   if (!confirm(`${STORE_NAME[storeId]||storeId}：選択した${staffIds.length}名にLINEで確定通知を送ります。\nよろしいですか？`)) return;
   try {
     const data = await gasGet({ action:'notifyConfirmed', lineId, storeId, staffIds: JSON.stringify(staffIds) });
-    if (data.ok) alert(`✅ ${STORE_NAME[storeId]||storeId}：${data.notified}名に通知しました（${data.shiftCount}件）。`);
-    else { alert('通知エラー: ' + (data.error||'不明')); return; }
+    if (!data.ok) { alert('通知エラー: ' + (data.error||'不明')); return; }
+    else if (data.shiftCount === 0) alert('通知対象はありません。過去日の未送信確定は自動的に除外されています。');
+    else alert(`✅ ${STORE_NAME[storeId]||storeId}：${data.notified}名に通知しました（${data.shiftCount}件）。`);
   } catch(e) { alert('通知エラー: ' + e.message); return; }
   await loadConfirmData();   // バナー更新
   await openNotifyList();    // リスト再描画（通知済みの人は消える）
@@ -1293,6 +1298,9 @@ function openConfirmModal(key) {
       row.innerHTML = `<div style="width:22px;flex-shrink:0"></div><div class="cf-info"><div class="cf-name" style="color:#aaa">${skill}${it.name}</div><div class="cf-time" style="color:#bbb">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip" style="background:#f0f0f0;color:#999">見送り</div><button class="cf-undo" onclick="revertOne('${it.id}')">取消</button>`;
     } else if (it.confirmed && it.notified) {
       row.innerHTML = `<div style="width:22px;flex-shrink:0;text-align:center;color:#3182ce;font-weight:bold">✓</div><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip conf">通知済み</div>`;
+    } else if (it.confirmed && it.active === false) {
+      // 過去日の未送信確定：勤務データは残すが「未通知（通知待ち）」の強調は出さず、中立の「確定」表示にする（取消は従来どおり可能）
+      row.innerHTML = `<div style="width:22px;flex-shrink:0;text-align:center;color:#3182ce;font-weight:bold">✓</div><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip conf">確定</div><button class="cf-undo" onclick="revertOne('${it.id}')">取消</button>`;
     } else if (it.confirmed) {
       row.innerHTML = `<div style="width:22px;flex-shrink:0;text-align:center;color:#3182ce;font-weight:bold">✓</div><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip" style="background:#fff3e0;color:#e67e22">確定・未通知</div><button class="cf-undo" onclick="revertOne('${it.id}')">取消</button>`;
     } else {
