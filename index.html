@@ -155,6 +155,7 @@ body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #33
 .cf-chip.pend { background: #fff3e0; color: #e67e22; }
 .cf-chip.conf { background: #eef5ff; color: #3182ce; }
 .cf-undo { flex-shrink: 0; margin-left: 6px; padding: 5px 11px; border: 1px solid #ccc; background: #fff; border-radius: 14px; font-size: 11px; color: #666; cursor: pointer; }
+.cf-edit { flex-shrink: 0; margin-left: 6px; padding: 5px 11px; border: 1px solid #b7dfff; background: #eef7ff; border-radius: 14px; font-size: 11px; color: #2b6cb0; cursor: pointer; }
 .cf-tools { display: flex; gap: 8px; margin: 4px 0 12px; }
 .cf-tool-btn { flex: 1; padding: 9px; border: 2px solid #e2e8f0; background: white; border-radius: 10px; font-size: 13px; cursor: pointer; }
 
@@ -554,7 +555,7 @@ let applySelected = {}, applyExisting = {}, applyShortage = {};
 let multiMode = false, multiPicked = {};                 // まとめて選択モード
 let pendingPart = null, modalStore = null, modalDate = null; // 昼/夜トグル用
 let editMonth = new Date().getMonth()+1, editYear = new Date().getFullYear();
-let editShifts = [], editingShift = null, editMode = 'self';
+let editShifts = [], editingShift = null, editMode = 'self', editInitial = null;
 let proxyEditShifts = [];
 let proxyTarget = null, proxyStore = null;
 let proxyMonth = new Date().getMonth()+1, proxyYear = new Date().getFullYear();
@@ -645,7 +646,7 @@ function setupApp() {
   document.getElementById('start-custom').oninput  = () => clearPresets('start');
   document.getElementById('end-custom').oninput    = () => clearPresets('end');
   document.getElementById('edit-modal-confirm').onclick = saveEditTime;
-  document.getElementById('edit-modal-cancel').onclick  = () => document.getElementById('edit-modal').classList.remove('show');
+  document.getElementById('edit-modal-cancel').onclick  = closeEditModal;
   document.getElementById('done-back').onclick = () => {
     document.getElementById('done-view').style.display = 'none';
     document.getElementById('app').style.display = 'block';
@@ -877,19 +878,45 @@ function openEditModal(id,date,storeId,start,end,mode) {
   buildPresets2('edit-end',endPresetsFor(storeId),normEnd(start,end)); // 旧「1:00」形式でもプリセット既定が一致するよう正規化
   document.getElementById('edit-start-custom').value='';
   document.getElementById('edit-end-custom').value='';
+  editInitial = { start: getTime2('edit-start'), end: getTime2('edit-end') };  // 未保存判定の基準（開いた時点のUI状態）
   document.getElementById('edit-modal').classList.add('show');
+}
+
+// 未保存の変更があれば確認してから閉じる（修正・代理・確定モーダルの各編集で共通）
+function closeEditModal() {
+  const dirty = editInitial && (getTime2('edit-start') !== editInitial.start || getTime2('edit-end') !== editInitial.end);
+  if (dirty && !confirm('保存していない変更があります。破棄して閉じますか？')) return;
+  document.getElementById('edit-modal').classList.remove('show');
+}
+
+// 確定モーダルの行から、その行のシフトを既存の編集モーダルで開く（店舗=現在の確定タブ店舗／日付=開いている日）
+function openConfirmEdit(id, start, end) {
+  openEditModal(id, confirmDayKey, confirmStore.id, start, end, 'confirm');
 }
 
 async function saveEditTime() {
   const start=getTime2('edit-start'), end=getTime2('edit-end');
   if (!start){alert('開始時間を選択してください');return;}
   if (!end)  {alert('終了時間を選択してください');return;}
-  document.getElementById('edit-modal').classList.remove('show');
+  const saveBtn = document.getElementById('edit-modal-confirm');
+  if (saveBtn.disabled) return;                                   // 連打防止
+  const _label = saveBtn.textContent;
+  saveBtn.disabled = true; saveBtn.textContent = '保存中...';
   try {
     const data = await gasGet({ action:'updateShiftWeb', lineId, id:editingShift.id, start, end });
-    if (data && !data.ok) alert(data.error || '変更できませんでした');
-    await reloadEditList(editMode);
+    if (data && !data.ok) { alert(data.error || '変更できませんでした'); return; }   // 失敗：モーダルは開いたまま
+    document.getElementById('edit-modal').classList.remove('show');                   // 成功時のみ閉じる
+    if (data && data.calendarSyncOk === false) {
+      alert(data.warning || 'シフトは保存されましたが、Googleカレンダーへ反映できませんでした');  // カレンダー未反映：通常成功とは別表示
+    }
+    if (editMode === 'confirm') {
+      await loadConfirmData();
+      openConfirmModal(confirmDayKey);            // 保存後は確定モーダルへ戻る（修正タブは再読込しない）
+    } else {
+      await reloadEditList(editMode);
+    }
   } catch(e) { alert('更新エラー: '+e.message); }
+  finally { saveBtn.disabled = false; saveBtn.textContent = _label; }
 }
 
 async function confirmDelete(id,date,mode) {
@@ -1292,19 +1319,22 @@ function openConfirmModal(key) {
   items.forEach(it => {
     const row = document.createElement('div'); row.className='cf-row';
     const skill = it.skill==='熟練'?'★':it.skill==='成長中'?'△':it.skill==='新人'?'○':'';
+    // 「時間変更」ボタン：過去日(active===false)・見送り・休みには出さない。申請中/確定・未通知/通知済みに出す。
+    const canEditTime = (it.active !== false) && !it.rest && !it.declined;
+    const editBtn = canEditTime ? `<button class="cf-edit" onclick="openConfirmEdit('${it.id}','${it.start}','${it.end}')">時間変更</button>` : '';
     if (it.rest) {
       row.innerHTML = `<div style="width:22px;flex-shrink:0"></div><div class="cf-info"><div class="cf-name" style="color:#aaa">${skill}${it.name}</div></div><div class="cf-chip" style="background:#f0f0f0;color:#999">休み</div>`;
     } else if (it.declined) {
       row.innerHTML = `<div style="width:22px;flex-shrink:0"></div><div class="cf-info"><div class="cf-name" style="color:#aaa">${skill}${it.name}</div><div class="cf-time" style="color:#bbb">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip" style="background:#f0f0f0;color:#999">見送り</div><button class="cf-undo" onclick="revertOne('${it.id}')">取消</button>`;
     } else if (it.confirmed && it.notified) {
-      row.innerHTML = `<div style="width:22px;flex-shrink:0;text-align:center;color:#3182ce;font-weight:bold">✓</div><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip conf">通知済み</div>`;
+      row.innerHTML = `<div style="width:22px;flex-shrink:0;text-align:center;color:#3182ce;font-weight:bold">✓</div><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip conf">通知済み</div>${editBtn}`;
     } else if (it.confirmed && it.active === false) {
       // 過去日の未送信確定：勤務データは残すが「未通知（通知待ち）」の強調は出さず、中立の「確定」表示にする（取消は従来どおり可能）
       row.innerHTML = `<div style="width:22px;flex-shrink:0;text-align:center;color:#3182ce;font-weight:bold">✓</div><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip conf">確定</div><button class="cf-undo" onclick="revertOne('${it.id}')">取消</button>`;
     } else if (it.confirmed) {
-      row.innerHTML = `<div style="width:22px;flex-shrink:0;text-align:center;color:#3182ce;font-weight:bold">✓</div><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip" style="background:#fff3e0;color:#e67e22">確定・未通知</div><button class="cf-undo" onclick="revertOne('${it.id}')">取消</button>`;
+      row.innerHTML = `<div style="width:22px;flex-shrink:0;text-align:center;color:#3182ce;font-weight:bold">✓</div><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip" style="background:#fff3e0;color:#e67e22">確定・未通知</div><button class="cf-undo" onclick="revertOne('${it.id}')">取消</button>${editBtn}`;
     } else {
-      row.innerHTML = `<input type="checkbox" class="cf-check" value="${it.id}" checked onchange="updateCfBtn()"><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip pend">申請中</div>`;
+      row.innerHTML = `<input type="checkbox" class="cf-check" value="${it.id}" checked onchange="updateCfBtn()"><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip pend">申請中</div>${editBtn}`;
     }
     list.appendChild(row);
   });
