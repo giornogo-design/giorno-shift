@@ -156,26 +156,8 @@ body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #33
 .cf-chip.conf { background: #eef5ff; color: #3182ce; }
 .cf-undo { flex-shrink: 0; margin-left: 6px; padding: 5px 11px; border: 1px solid #ccc; background: #fff; border-radius: 14px; font-size: 11px; color: #666; cursor: pointer; }
 .cf-edit { flex-shrink: 0; margin-left: 6px; padding: 5px 11px; border: 1px solid #b7dfff; background: #eef7ff; border-radius: 14px; font-size: 11px; color: #2b6cb0; cursor: pointer; }
-.cf-tools { display: flex; gap: 8px; margin: 4px 0 12px; flex-wrap: wrap; }
-.cf-tool-btn { flex: 1 1 44%; min-height: 44px; padding: 9px; border: 2px solid #e2e8f0; background: white; border-radius: 10px; font-size: 13px; cursor: pointer; }
-/* SHIFT-017：削除は破壊的操作なので他ボタンと色を分け、隣接させない（誤タップ防止） */
-.cf-del { flex-shrink: 0; margin-left: 6px; padding: 5px 11px; border: 1px solid #f5c6c6; background: #fff5f5; border-radius: 14px; font-size: 11px; color: #c53030; cursor: pointer; }
-/* SHIFT-017：主要操作（確定/見送り/閉じる）をモーダル下部に固定＝長い一覧でも画面外へ隠れない */
-.cf-sticky { position: sticky; bottom: 0; background: #fff; padding-top: 10px; margin-top: 4px; box-shadow: 0 -6px 12px -6px rgba(0,0,0,0.12); }
-/* SHIFT-017：タップ領域の確保（iOSの誤タップ・二重送信対策） */
-.cf-edit, .cf-undo, .cf-del { min-height: 36px; }
-.cf-check { width: 22px; height: 22px; }
-button:disabled { opacity: .55; cursor: not-allowed; }
-/* SHIFT-017：iPad（縦・横）では下からせり上がるシートではなく中央カードにして高さを使い切る */
-@media (min-width: 768px) {
-  .modal-overlay { align-items: center; justify-content: center; }
-  .modal { max-width: 680px; border-radius: 20px; max-height: 86vh; transform: translateY(20px); }
-  .modal-overlay.show .modal { transform: translateY(0); }
-}
-/* 横向き・低い画面でもモーダル内部でスクロールできるようにする */
-@media (max-height: 500px) {
-  .modal { max-height: 94vh; padding: 16px; }
-}
+.cf-tools { display: flex; gap: 8px; margin: 4px 0 12px; }
+.cf-tool-btn { flex: 1; padding: 9px; border: 2px solid #e2e8f0; background: white; border-radius: 10px; font-size: 13px; cursor: pointer; }
 
 /* モーダル */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; display: flex; align-items: flex-end; opacity: 0; pointer-events: none; transition: opacity 0.2s; }
@@ -297,6 +279,52 @@ button:disabled { opacity: .55; cursor: not-allowed; }
     <div class="shift-list" id="edit-list"><div class="empty-state">読み込み中...</div></div>
   </div>
 
+  <!-- ③ 代理申請タブ（管理者） -->
+  <div id="tab-proxy" style="display:none">
+    <div id="proxy-staff-select">
+      <div class="staff-picker" id="proxy-staff-list"><div class="empty-state">読み込み中...</div></div>
+    </div>
+    <div id="proxy-calendar" style="display:none">
+      <div class="staff-card">
+        <div class="staff-avatar">👤</div>
+        <div>
+          <div class="staff-name" id="proxy-target-name"></div>
+          <div class="staff-sub" id="proxy-target-stores"></div>
+        </div>
+      </div>
+      <div class="store-tabs" id="store-tabs-proxy"></div>
+      <div class="cal-wrap">
+        <div class="cal-header">
+          <button class="cal-nav" id="proxy-prev">‹</button>
+          <div class="month-lbl" id="proxy-month-lbl"></div>
+          <button class="cal-nav" id="proxy-next">›</button>
+        </div>
+        <div class="cal-grid" id="proxy-grid">
+          <div class="cal-dow">日</div><div class="cal-dow">月</div><div class="cal-dow">火</div>
+          <div class="cal-dow">水</div><div class="cal-dow">木</div><div class="cal-dow">金</div><div class="cal-dow">土</div>
+        </div>
+        <div class="legend">
+          <span><span class="dot" style="background:#e8faf0;border:1px solid #06c755"></span>選択中</span>
+          <span><span class="dot" style="background:#fff3e0;border:1px solid #e67e22"></span>人手不足</span>
+        </div>
+      </div>
+      <div class="selected-list">
+        <div class="section-title">✅ 選択済みシフト</div>
+        <div id="proxy-selected"><div class="empty-state">日付をタップして追加</div></div>
+      </div>
+      <div class="submit-wrap">
+        <button class="btn-submit" id="proxy-submit" disabled>代理登録する（0件）</button>
+      </div>
+      <div class="selected-list">
+        <div class="section-title">📝 登録済みシフト（変更・削除）</div>
+        <div id="proxy-edit-list"><div class="empty-state">読み込み中...</div></div>
+      </div>
+      <div style="padding:0 12px 12px">
+        <button class="btn-cancel" onclick="backToProxyStaffList()">← スタッフ選択に戻る</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ④ 営業日設定タブ（管理者） -->
   <div id="tab-days" style="display:none">
     <div class="store-tabs" id="store-tabs-days"></div>
@@ -337,10 +365,6 @@ button:disabled { opacity: .55; cursor: not-allowed; }
   <!-- ⑤ 確定タブ（管理者） -->
   <div id="tab-confirm" style="display:none">
     <div class="store-tabs" id="store-tabs-confirm"></div>
-    <!-- SHIFT-017：未処理件数（申請中）。確定未通知バーと並べて上部に固定表示する。 -->
-    <div id="confirm-pending-bar" style="display:none;margin:0 12px 10px;padding:12px 14px;background:#fff3e0;border:1px solid #e67e22;border-radius:12px;align-items:center;gap:10px">
-      <div style="flex:1;font-size:13px;color:#a05a00;line-height:1.5"><b id="confirm-pending-count">0</b>件の申請が未処理です（日付をタップして確定・見送り）</div>
-    </div>
     <div id="confirm-notify-bar" style="display:none;margin:0 12px 10px;padding:12px 14px;background:#fff8e1;border:1px solid #ffd54f;border-radius:12px;align-items:center;gap:10px">
       <div style="flex:1;font-size:13px;color:#8a6d00;line-height:1.5"><span id="confirm-notify-store"></span><b id="confirm-notify-count">0</b>件の確定が未通知です</div>
       <button id="confirm-notify-btn" style="flex-shrink:0;padding:9px 16px;background:#06c755;color:#fff;border:none;border-radius:20px;font-size:13px;font-weight:bold;cursor:pointer">未通知を確認</button>
@@ -383,13 +407,14 @@ button:disabled { opacity: .55; cursor: not-allowed; }
   <button class="nav-btn" id="nav-edit" onclick="switchTab('edit')">
     <span class="icon">✏️</span>修正
   </button>
-  <!-- 管理者の2タブ（SHIFT-017）。スタッフには出さない。
-       内部のタブID(confirm/days)は既存のまま＝表示名だけ「シフト管理」「営業日設定」に統合。 -->
-  <button class="nav-btn" id="nav-shift" onclick="switchTab('confirm')" style="display:none">
-    <span class="icon">🗂</span>シフト管理
+  <button class="nav-btn" id="nav-proxy" onclick="switchTab('proxy')" style="display:none">
+    <span class="icon">👥</span>代理
   </button>
   <button class="nav-btn" id="nav-days" onclick="switchTab('days')" style="display:none">
-    <span class="icon">🗓</span>営業日設定
+    <span class="icon">🗓</span>営業日
+  </button>
+  <button class="nav-btn" id="nav-confirm" onclick="switchTab('confirm')" style="display:none">
+    <span class="icon">✅</span>確定
   </button>
 </nav>
 
@@ -426,26 +451,11 @@ button:disabled { opacity: .55; cursor: not-allowed; }
     <div class="cf-tools">
       <button class="cf-tool-btn" onclick="cfSelectAll(true)">申請中をすべて選択</button>
       <button class="cf-tool-btn" onclick="cfSelectAll(false)">選択を解除</button>
-      <button class="cf-tool-btn" id="cf-proxy-add">＋ 代理で追加</button>
-      <button class="cf-tool-btn" id="cf-revert-all" onclick="revertAllOfDay()">この日を一括差し戻し</button>
     </div>
     <div id="confirm-modal-list"></div>
-    <!-- 保存・確定・通知は別ボタン（同じボタンにまとめない） -->
-    <div class="cf-sticky">
-      <button class="btn-confirm" id="confirm-modal-do">選択した0件を確定</button>
-      <button class="btn-cancel"  id="confirm-modal-decline" style="color:#e67e22;border:2px solid #ffd9b0;background:#fff8f0;font-weight:bold">選択した0件を見送り</button>
-      <button class="btn-cancel"  id="confirm-modal-cancel">閉じる</button>
-    </div>
-  </div>
-</div>
-
-<!-- 代理入力：スタッフ選択モーダル（管理者・SHIFT-017） -->
-<div class="modal-overlay" id="proxy-pick-modal">
-  <div class="modal">
-    <div class="modal-title">代理で追加するスタッフ</div>
-    <div class="modal-sub" id="proxy-pick-sub"></div>
-    <div id="proxy-pick-body"><div class="empty-state">読み込み中...</div></div>
-    <button class="btn-cancel" id="proxy-pick-close">キャンセル</button>
+    <button class="btn-confirm" id="confirm-modal-do">選択した0件を確定</button>
+    <button class="btn-cancel"  id="confirm-modal-decline" style="color:#e67e22;border:2px solid #ffd9b0;background:#fff8f0;font-weight:bold">選択した0件を見送り</button>
+    <button class="btn-cancel"  id="confirm-modal-cancel">閉じる</button>
   </div>
 </div>
 
@@ -546,12 +556,14 @@ let multiMode = false, multiPicked = {};                 // まとめて選択�
 let pendingPart = null, modalStore = null, modalDate = null; // 昼/夜トグル用
 let editMonth = new Date().getMonth()+1, editYear = new Date().getFullYear();
 let editShifts = [], editingShift = null, editMode = 'self', editInitial = null;
+let proxyEditShifts = [];
+let proxyTarget = null, proxyStore = null;
+let proxyMonth = new Date().getMonth()+1, proxyYear = new Date().getFullYear();
+let proxySelected = {}, proxyShortage = {};
 let daysStore = null, daysMonth = new Date().getMonth()+1, daysYear = new Date().getFullYear();
 let daysFixedOff = [], daysHolidays = new Set(), daysOpens = new Set(), daysMeetings = new Set();
 let daysMode = 'normal';   // 'normal'（休業/営業）| 'meeting'（ミーティング日）
 let confirmStore = null, confirmMonth = new Date().getMonth()+1, confirmYear = new Date().getFullYear();
-let proxyAddTarget = null;   // SHIFT-017：統合モーダルの代理追加で選んだスタッフ（画面内のみ・保存しない）
-let confirmPending = 0;      // SHIFT-017：当月の申請中件数（バッジ表示用）
 let confirmDays = {}, confirmDayKey = null, confirmPendingNotify = 0;
 let pendingDate = null, pendingMode = null;
 
@@ -616,22 +628,18 @@ function setupApp() {
   document.getElementById('bottom-nav').style.display = 'flex';
   document.getElementById('staff-name-lbl').textContent   = staffData.name + 'さん';
   document.getElementById('staff-stores-lbl').textContent = '担当: ' + staffData.stores.map(s=>s.name).join(' / ');
-  // SHIFT-017：管理者は「シフト管理」「営業日設定」の2タブのみ。スタッフは「申請」「修正」のみ。
-  // 管理者が自分のシフトを入れる場合はシフト管理の代理入力で自分を選ぶ（CEO確定仕様）。
   if (staffData.isAdmin) {
-    document.getElementById('nav-shift').style.display = 'flex';
-    document.getElementById('nav-days').style.display  = 'flex';
-    document.getElementById('nav-apply').style.display = 'none';   // 管理者には申請タブを出さない
-    document.getElementById('nav-edit').style.display  = 'none';   // 修正はシフト管理へ統合
+    document.getElementById('nav-proxy').style.display   = 'flex';
+    document.getElementById('nav-days').style.display    = 'flex';
+    document.getElementById('nav-confirm').style.display = 'flex';
     document.getElementById('confirm-modal-do').onclick      = doConfirm;
     document.getElementById('confirm-modal-decline').onclick = doDecline;
     document.getElementById('confirm-modal-cancel').onclick  = () => document.getElementById('confirm-modal').classList.remove('show');
     document.getElementById('confirm-notify-btn').onclick    = openNotifyList;
     document.getElementById('notify-list-close').onclick     = () => document.getElementById('notify-list-modal').classList.remove('show');
-    document.getElementById('cf-proxy-add').onclick          = openProxyPicker;
-    document.getElementById('proxy-pick-close').onclick      = () => document.getElementById('proxy-pick-modal').classList.remove('show');
   }
 
+  initApplyTab();
   document.getElementById('apply-submit').onclick = submitApply;
   document.getElementById('modal-confirm').onclick = confirmTime;
   document.getElementById('modal-cancel').onclick  = closeModal;
@@ -643,39 +651,27 @@ function setupApp() {
     document.getElementById('done-view').style.display = 'none';
     document.getElementById('app').style.display = 'block';
     document.getElementById('bottom-nav').style.display = 'flex';
-    // 管理者は代理登録後もシフト管理へ戻る（代理タブは廃止＝SHIFT-017）
-    if (staffData.isAdmin) { loadConfirmData(); switchTab('confirm'); }
-    else if (pendingMode === 'edit') { loadEditShifts(); switchTab('edit'); }
+    if (pendingMode === 'edit') { loadEditShifts(); switchTab('edit'); }
+    else if (pendingMode === 'proxy') { switchTab('proxy'); }
     else switchTab('apply');
   };
-
-  // タブ初期化はハンドラ登録の後（初期化内で描画が走るため）
-  if (staffData.isAdmin) {
-    restoreAdminState();   // 店舗・期間・表示状態を復元（localStorage・個人情報は保存しない）
-    switchTab('confirm');  // 起動タブ＝シフト管理（switchTab内で initConfirmTab が走る）
-  } else {
-    initApplyTab();
-    switchTab('apply');
-  }
 }
 
 // ============================================================
 // タブ切り替え
 // ============================================================
 function switchTab(tab) {
-  ['apply','edit','days','confirm'].forEach(t => {
+  ['apply','edit','proxy','days','confirm'].forEach(t => {
     document.getElementById('tab-'+t).style.display = t===tab ? '' : 'none';
     const nav = document.getElementById('nav-'+t);
     if (nav) nav.classList.toggle('active', t===tab);
   });
   if (tab === 'edit') loadEditShifts();
+  if (tab === 'proxy') loadProxyStaffList();
   if (tab === 'days') initDaysTab();
-  if (tab === 'confirm') initConfirmTab();   // ＝シフト管理（修正・代理・確定を統合）
-  // 'proxy' は SHIFT-017 で廃止（代理入力はシフト管理の統合モーダルへ）。
-  // 配列には残して常に display:none にし、旧DOMが表に出ないようにする。
+  if (tab === 'confirm') initConfirmTab();
   document.getElementById('header-title').textContent =
-    tab==='apply' ? '📅 シフト申請' : tab==='edit' ? '✏️ シフト修正' : tab==='days' ? '🗓 営業日設定' : '🗂 シフト管理';
-  if (staffData.isAdmin && (tab === 'confirm' || tab === 'days')) saveAdminState({ view: tab });
+    tab==='apply' ? '📅 シフト申請' : tab==='edit' ? '✏️ シフト修正' : tab==='proxy' ? '👥 代理申請' : tab==='days' ? '🗓 営業日設定' : '✅ シフト確定';
 }
 
 // ============================================================
@@ -873,8 +869,7 @@ function renderEditList() {
 }
 
 // 編集後にどのリストを再読込するか
-// 旧代理タブ廃止（SHIFT-017）により本人修正のみ。呼び出し側の互換のため関数は残す。
-function reloadEditList(mode) { return loadEditShifts(); }
+function reloadEditList(mode) { return mode==='proxy' ? loadProxyEditShifts() : loadEditShifts(); }
 
 function openEditModal(id,date,storeId,start,end,mode) {
   editingShift={id,date,storeId}; editMode = mode || 'self';
@@ -933,6 +928,138 @@ async function confirmDelete(id,date,mode) {
   } catch(e) { alert('削除エラー: '+e.message); }
 }
 
+// 代理：選択スタッフの登録済みシフトを一覧表示（管理者は確定済みも編集可）
+async function loadProxyEditShifts() {
+  const c = document.getElementById('proxy-edit-list');
+  if (!proxyTarget) { c.innerHTML='<div class="empty-state">スタッフ未選択</div>'; return; }
+  c.innerHTML='<div class="empty-state">読み込み中...</div>';
+  try {
+    const data = await gasGet({ action:'getShiftsWithId', lineId, month:proxyMonth, year:proxyYear, targetStaffId:proxyTarget.id });
+    proxyEditShifts = data.ok ? data.shifts : [];
+    if (!proxyEditShifts.length) { c.innerHTML='<div class="empty-state">この月の登録済みシフトはありません</div>'; return; }
+    c.innerHTML='';
+    proxyEditShifts.sort((a,b)=>{ const [am,ad]=a.date.split('/').map(Number); const [bm,bd]=b.date.split('/').map(Number); return am!==bm?am-bm:ad-bd; }).forEach(s=>{
+      const [m,d]=s.date.split('/').map(Number); const dt=new Date(proxyYear,m-1,d);
+      const confirmed = (s.status==='確定' || s.status==='確定済');
+      const statusChip = confirmed ? ' <span class="shift-store" style="background:#eef5ff;color:#3182ce">確定済み</span>' : '';
+      const item=document.createElement('div'); item.className='shift-item';
+      item.innerHTML=`<div class="shift-item-header"><span class="shift-date">${s.date}（${DOW[dt.getDay()]}）</span><span class="shift-store">${STORE_NAME[s.storeId]||s.storeId}</span>${statusChip}</div><div class="shift-time">${s.start} 〜 ${dispEnd(s.start, s.end)}</div><div class="shift-actions"><button class="btn-edit" onclick="openEditModal('${s.id}','${s.date}','${s.storeId}','${s.start}','${s.end}','proxy')">時間変更</button><button class="btn-delete" onclick="confirmDelete('${s.id}','${s.date}','proxy')">削除</button></div>`;
+      c.appendChild(item);
+    });
+  } catch(e) { c.innerHTML='<div class="empty-state">読み込みエラー</div>'; }
+}
+
+// ============================================================
+// ③ 代理申請タブ
+// ============================================================
+async function loadProxyStaffList() {
+  document.getElementById('proxy-staff-select').style.display='';
+  document.getElementById('proxy-calendar').style.display='none';
+  document.getElementById('proxy-staff-list').innerHTML='<div class="empty-state">読み込み中...</div>';
+  try {
+    const data = await gasGet({ action:'getStaffList', lineId });
+    if (!data.ok) { document.getElementById('proxy-staff-list').innerHTML=`<div class="empty-state">${data.error}</div>`; return; }
+    const list=document.getElementById('proxy-staff-list');
+    list.innerHTML='<div class="section-title">スタッフを選択</div>';
+    data.staff.forEach(s=>{
+      const item=document.createElement('div'); item.className='staff-pick-item';
+      const storeNames=s.stores.map(id=>STORE_NAME[id]||id).join(' / ');
+      item.innerHTML=`<div><div class="staff-pick-name">${s.name}</div><div class="staff-pick-stores">${storeNames}</div></div><div class="staff-pick-arrow">›</div>`;
+      item.onclick=()=>selectProxyStaff(s);
+      list.appendChild(item);
+    });
+  } catch(e) { document.getElementById('proxy-staff-list').innerHTML='<div class="empty-state">エラー: '+e.message+'</div>'; }
+}
+
+function selectProxyStaff(staff) {
+  proxyTarget=staff; proxySelected={}; proxyShortage={};
+  document.getElementById('proxy-target-name').textContent=staff.name+'さん（代理申請）';
+  const storeObjs=staff.stores.map(id=>({ id, name:STORE_NAME[id]||id, open:STORE_OPEN[id], close:STORE_CLOSE[id] }));
+  document.getElementById('proxy-target-stores').textContent='担当: '+storeObjs.map(s=>s.name).join(' / ');
+  const tabs=document.getElementById('store-tabs-proxy'); tabs.innerHTML='';
+  storeObjs.forEach((store,i)=>{
+    const btn=document.createElement('button'); btn.className='store-tab'+(i===0?' active':''); btn.textContent=store.name;
+    btn.onclick=()=>{ proxyStore=store; document.querySelectorAll('#store-tabs-proxy .store-tab').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); loadProxyData(); };
+    tabs.appendChild(btn);
+  });
+  proxyStore=storeObjs[0];
+  document.getElementById('proxy-prev').onclick=()=>{ proxyMonth--; if(proxyMonth<1){proxyMonth=12;proxyYear--;} loadProxyData(); };
+  document.getElementById('proxy-next').onclick=()=>{ proxyMonth++; if(proxyMonth>12){proxyMonth=1;proxyYear++;} loadProxyData(); };
+  document.getElementById('proxy-submit').onclick=submitProxy;
+  document.getElementById('proxy-staff-select').style.display='none';
+  document.getElementById('proxy-calendar').style.display='';
+  loadProxyData();
+}
+
+function backToProxyStaffList() { document.getElementById('proxy-staff-select').style.display=''; document.getElementById('proxy-calendar').style.display='none'; }
+
+async function loadProxyData() {
+  proxyShortage = {};
+  renderProxyCal(); // 枠を即表示
+  try {
+    const sd = await gasGet({ action:'getShortage', storeId: proxyStore.id, month: proxyMonth });
+    if (sd.ok) proxyShortage = sd.days;
+  } catch(e) {}
+  renderProxyCal();
+  loadProxyEditShifts(); // 選択スタッフの登録済みシフト（変更・削除）を表示
+}
+
+function renderProxyCal() {
+  document.getElementById('proxy-month-lbl').textContent=`${proxyYear}年${proxyMonth}月`;
+  const grid=document.getElementById('proxy-grid');
+  while(grid.children.length>7) grid.removeChild(grid.lastChild);
+  const today=new Date(); today.setHours(0,0,0,0);
+  const first=new Date(proxyYear,proxyMonth-1,1).getDay(), last=new Date(proxyYear,proxyMonth,0).getDate();
+  for(let i=0;i<first;i++){const c=document.createElement('div');c.className='cal-cell empty';grid.appendChild(c);}
+  for(let d=1;d<=last;d++){
+    const dt=new Date(proxyYear,proxyMonth-1,d); const key=`${proxyMonth}/${d}`;
+    const isSel=!!(proxySelected[key]?.storeId===proxyStore?.id);
+    const sh=proxyShortage[key]; const isShort=!!(sh && !sh.ok);
+    const isPast=dt<today;
+    const c=document.createElement('div');
+    let cls='cal-cell';
+    if(isPast) cls+=' oor';
+    if(dt.getTime()===today.getTime()) cls+=' today';
+    if(isSel) cls+=' selected';
+    else if(isShort && !isPast) cls+=' short';
+    c.className=cls;
+    const num=document.createElement('div');num.className='day-num';num.textContent=d;c.appendChild(num);
+    if(isSel){const b=document.createElement('div');b.className='shift-badge';const s=proxySelected[key];b.textContent=s.start+'〜'+dispEnd(s.start,s.end);c.appendChild(b);}
+    else if(isShort && !isPast){const b=document.createElement('div');b.className='short-badge';b.textContent=sh.shortage>0?'あと'+sh.shortage:(sh.missingPro?'熟練':'募集');c.appendChild(b);}
+    if(!isPast) c.onclick=()=>tapProxyDate(proxyMonth,d,key);
+    grid.appendChild(c);
+  }
+  renderProxyList();
+}
+
+function tapProxyDate(month,day,key) {
+  if(proxySelected[key]?.storeId===proxyStore.id){delete proxySelected[key];renderProxyCal();return;}
+  pendingDate={month,day,key}; pendingMode='proxy';
+  openModal(month,day,proxyStore);
+}
+
+function renderProxyList() {
+  const items=Object.values(proxySelected).filter(s=>s.storeId===proxyStore?.id).sort((a,b)=>a.month!==b.month?a.month-b.month:a.day-b.day);
+  const c=document.getElementById('proxy-selected');
+  if(!items.length){c.innerHTML='<div class="empty-state">日付をタップして追加</div>'; const btn=document.getElementById('proxy-submit'); btn.disabled=true; btn.textContent='代理登録する（0件）'; return;}
+  c.innerHTML='';
+  items.forEach(s=>{const key=`${s.month}/${s.day}`;const dt=new Date(proxyYear,s.month-1,s.day);const row=document.createElement('div');row.className='sel-item';row.innerHTML=`<div class="sel-date">${s.month}/${s.day}（${DOW[dt.getDay()]}）</div><div class="sel-time">${s.start} 〜 ${dispEnd(s.start, s.end)}</div><button class="btn-del-sel" onclick="delProxySel('${key}')">✕</button>`;c.appendChild(row);});
+  const n=items.length; const btn=document.getElementById('proxy-submit'); btn.disabled=n===0; btn.textContent=`代理登録する（${n}件）`;
+}
+function delProxySel(key){delete proxySelected[key];renderProxyCal();}
+
+async function submitProxy() {
+  const items=Object.values(proxySelected).filter(s=>s.storeId===proxyStore.id);
+  if(!items.length)return;
+  document.getElementById('proxy-submit').disabled=true;
+  document.getElementById('proxy-submit').textContent='登録中...';
+  try {
+    const data=await gasGet({ action:'proxyShift', lineId, targetStaffId:proxyTarget.id, storeId:proxyStore.id, shifts:JSON.stringify(items) });
+    showDone(proxyTarget.name+'さんの代理登録 / '+proxyStore.name, data.saved||[], data.errors||[], 'proxy');
+    items.forEach(s=>delete proxySelected[`${s.month}/${s.day}`]);
+  } catch(e){ alert('登録エラー: '+e.message); }
+  renderProxyList();
+}
 
 // ============================================================
 // ④ 営業日設定タブ（管理者）
@@ -1063,57 +1190,22 @@ async function tapDaysDate(day, key) {
 }
 
 // ============================================================
-// 管理画面の状態保持（SHIFT-017）
-// localStorage に保存するのは「店舗ID・対象年月・表示タブ」だけ。
-// PIN・氏名・LINE ID・シフト内容などの個人情報は保存しない。
-// ============================================================
-var ADMIN_STATE_KEYS = { store: 'giornoShiftAdmin.store', period: 'giornoShiftAdmin.period', view: 'giornoShiftAdmin.view' };
-
-function saveAdminState(patch) {
-  try {
-    if (patch.store  !== undefined) localStorage.setItem(ADMIN_STATE_KEYS.store, String(patch.store));
-    if (patch.period !== undefined) localStorage.setItem(ADMIN_STATE_KEYS.period, String(patch.period)); // 'YYYY-M'
-    if (patch.view   !== undefined) localStorage.setItem(ADMIN_STATE_KEYS.view, String(patch.view));
-  } catch (e) {}   // プライベートブラウズ等で書けなくても機能は止めない
-}
-
-// 起動時に店舗・期間を復元する。壊れた値・存在しない店舗は既定へフォールバック。
-function restoreAdminState() {
-  try {
-    const sid = localStorage.getItem(ADMIN_STATE_KEYS.store);
-    if (sid && STORE_NAME[sid]) confirmStore = { id: sid, name: STORE_NAME[sid] };
-    const p = localStorage.getItem(ADMIN_STATE_KEYS.period);
-    if (p && /^\d{4}-\d{1,2}$/.test(p)) {
-      const [y, m] = p.split('-').map(Number);
-      if (y >= 2020 && y <= 2100 && m >= 1 && m <= 12) { confirmYear = y; confirmMonth = m; }
-    }
-  } catch (e) {}
-}
-
-// ============================================================
-// ⑤ シフト管理タブ（管理者）＝ 旧「確定」タブに修正・代理・削除を統合（SHIFT-017）
+// ⑤ 確定タブ（管理者）
 // ============================================================
 function initConfirmTab() {
   const tabs = document.getElementById('store-tabs-confirm');
   if (!tabs.children.length) {
     const allStores = Object.keys(STORE_NAME).map(id => ({ id, name: STORE_NAME[id] }));
-    // 復元済みの店舗があればそれを選択状態にする（無ければ先頭）
-    if (!confirmStore || !STORE_NAME[confirmStore.id]) confirmStore = allStores[0];
-    allStores.forEach((store) => {
+    allStores.forEach((store, i) => {
       const btn = document.createElement('button');
-      btn.className = 'store-tab' + (store.id === confirmStore.id ? ' active' : '');
+      btn.className = 'store-tab' + (i===0?' active':'');
       btn.textContent = store.name;
-      btn.onclick = () => {
-        confirmStore = store;
-        document.querySelectorAll('#store-tabs-confirm .store-tab').forEach(b=>b.classList.remove('active'));
-        btn.classList.add('active');
-        saveAdminState({ store: store.id });
-        loadConfirmData();
-      };
+      btn.onclick = () => { confirmStore = store; document.querySelectorAll('#store-tabs-confirm .store-tab').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); loadConfirmData(); };
       tabs.appendChild(btn);
     });
-    document.getElementById('confirm-prev').onclick = () => { confirmMonth--; if(confirmMonth<1){confirmMonth=12;confirmYear--;} saveAdminState({ period: confirmYear+'-'+confirmMonth }); loadConfirmData(); };
-    document.getElementById('confirm-next').onclick = () => { confirmMonth++; if(confirmMonth>12){confirmMonth=1;confirmYear++;} saveAdminState({ period: confirmYear+'-'+confirmMonth }); loadConfirmData(); };
+    confirmStore = allStores[0];
+    document.getElementById('confirm-prev').onclick = () => { confirmMonth--; if(confirmMonth<1){confirmMonth=12;confirmYear--;} loadConfirmData(); };
+    document.getElementById('confirm-next').onclick = () => { confirmMonth++; if(confirmMonth>12){confirmMonth=1;confirmYear++;} loadConfirmData(); };
   }
   loadConfirmData();
 }
@@ -1133,23 +1225,6 @@ function renderNotifyBar() {
   document.getElementById('confirm-notify-store').textContent = '';
   document.getElementById('confirm-notify-count').textContent = confirmPendingNotify;
   document.getElementById('confirm-notify-bar').style.display = confirmPendingNotify > 0 ? 'flex' : 'none';
-  renderPendingBar();
-}
-
-// SHIFT-017：未処理バッジ（申請中／確定・未通知）。confirmDays から数えるので実データと必ず一致する。
-// 過去日は getConfirmCal 側で active:false になり、未通知強調の対象外＝ここでも申請中のみ数える。
-function renderPendingBar() {
-  let pend = 0;
-  Object.keys(confirmDays).forEach(k => {
-    (confirmDays[k] || []).forEach(it => {
-      if (!it.confirmed && !it.declined && !it.rest) pend++;
-    });
-  });
-  confirmPending = pend;
-  const el = document.getElementById('confirm-pending-count');
-  if (el) el.textContent = pend;
-  const bar = document.getElementById('confirm-pending-bar');
-  if (bar) bar.style.display = pend > 0 ? 'flex' : 'none';
 }
 
 // 未通知リストを開く（全店・店舗ごと。スタッフ別にチェックを付けて選んだ人だけ通知できる）
@@ -1247,21 +1322,19 @@ function openConfirmModal(key) {
     // 「時間変更」ボタン：過去日(active===false)・見送り・休みには出さない。申請中/確定・未通知/通知済みに出す。
     const canEditTime = (it.active !== false) && !it.rest && !it.declined;
     const editBtn = canEditTime ? `<button class="cf-edit" onclick="openConfirmEdit('${it.id}','${it.start}','${it.end}')">時間変更</button>` : '';
-    // SHIFT-017：削除は「時間変更できる状態」と同条件＝過去日・見送り・休みには出さない（誤操作防止）
-    const delBtn = canEditTime ? `<button class="cf-del" onclick="cfDelete('${it.id}','${String(it.name).replace(/'/g,"\\'")}')">削除</button>` : '';
     if (it.rest) {
       row.innerHTML = `<div style="width:22px;flex-shrink:0"></div><div class="cf-info"><div class="cf-name" style="color:#aaa">${skill}${it.name}</div></div><div class="cf-chip" style="background:#f0f0f0;color:#999">休み</div>`;
     } else if (it.declined) {
       row.innerHTML = `<div style="width:22px;flex-shrink:0"></div><div class="cf-info"><div class="cf-name" style="color:#aaa">${skill}${it.name}</div><div class="cf-time" style="color:#bbb">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip" style="background:#f0f0f0;color:#999">見送り</div><button class="cf-undo" onclick="revertOne('${it.id}')">取消</button>`;
     } else if (it.confirmed && it.notified) {
-      row.innerHTML = `<div style="width:22px;flex-shrink:0;text-align:center;color:#3182ce;font-weight:bold">✓</div><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip conf">通知済み</div>${editBtn}${delBtn}`;
+      row.innerHTML = `<div style="width:22px;flex-shrink:0;text-align:center;color:#3182ce;font-weight:bold">✓</div><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip conf">通知済み</div>${editBtn}`;
     } else if (it.confirmed && it.active === false) {
       // 過去日の未送信確定：勤務データは残すが「未通知（通知待ち）」の強調は出さず、中立の「確定」表示にする（取消は従来どおり可能）
       row.innerHTML = `<div style="width:22px;flex-shrink:0;text-align:center;color:#3182ce;font-weight:bold">✓</div><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip conf">確定</div><button class="cf-undo" onclick="revertOne('${it.id}')">取消</button>`;
     } else if (it.confirmed) {
-      row.innerHTML = `<div style="width:22px;flex-shrink:0;text-align:center;color:#3182ce;font-weight:bold">✓</div><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip" style="background:#fff3e0;color:#e67e22">確定・未通知</div><button class="cf-undo" onclick="revertOne('${it.id}')">取消</button>${editBtn}${delBtn}`;
+      row.innerHTML = `<div style="width:22px;flex-shrink:0;text-align:center;color:#3182ce;font-weight:bold">✓</div><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip" style="background:#fff3e0;color:#e67e22">確定・未通知</div><button class="cf-undo" onclick="revertOne('${it.id}')">取消</button>${editBtn}`;
     } else {
-      row.innerHTML = `<input type="checkbox" class="cf-check" value="${it.id}" checked onchange="updateCfBtn()"><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip pend">申請中</div>${editBtn}${delBtn}`;
+      row.innerHTML = `<input type="checkbox" class="cf-check" value="${it.id}" checked onchange="updateCfBtn()"><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip pend">申請中</div>${editBtn}`;
     }
     list.appendChild(row);
   });
@@ -1272,88 +1345,6 @@ function openConfirmModal(key) {
 function cfSelectAll(on) {
   document.querySelectorAll('#confirm-modal-list .cf-check').forEach(c => c.checked = on);
   updateCfBtn();
-}
-
-// ------------------------------------------------------------
-// 代理入力（SHIFT-017）：シフト管理の日付モーダルから直接、他スタッフのシフトを追加する。
-// 旧「代理タブ」の getStaffList → 時間入力 → proxyShift をそのまま再利用（新規APIなし）。
-// 保存のみ＝確定もLINE通知もしない（保存・確定・通知の分離を維持）。
-// ------------------------------------------------------------
-async function openProxyPicker() {
-  const body = document.getElementById('proxy-pick-body');
-  document.getElementById('proxy-pick-sub').textContent = `${confirmDayKey}　${confirmStore.name} に追加します`;
-  body.innerHTML = '<div class="empty-state">読み込み中...</div>';
-  document.getElementById('proxy-pick-modal').classList.add('show');
-  try {
-    const data = await gasGet({ action:'getStaffList', lineId });
-    const list = (data.ok ? data.staff : []) || [];
-    const target = list.filter(s => !s.stores || !s.stores.length || s.stores.some(x => (x.id||x) === confirmStore.id));
-    const show = target.length ? target : list;
-    if (!show.length) { body.innerHTML = '<div class="empty-state">スタッフが取得できませんでした</div>'; return; }
-    body.innerHTML = '';
-    show.forEach(s => {
-      const row = document.createElement('button');
-      row.className = 'cf-row';
-      row.style.cssText = 'width:100%;text-align:left;background:#fff;border:1px solid #eee;border-radius:10px;margin-bottom:8px;min-height:48px;cursor:pointer';
-      row.innerHTML = `<div class="cf-info"><div class="cf-name">👤 ${s.name}</div></div><div class="cf-chip pend">選ぶ</div>`;
-      row.onclick = () => startProxyAdd(s);
-      body.appendChild(row);
-    });
-  } catch (e) { body.innerHTML = '<div class="empty-state">読み込みエラー</div>'; }
-}
-
-// スタッフを選んだら既存の時間入力モーダルを開く（proxy専用の時間UIを作らない）
-function startProxyAdd(staff) {
-  document.getElementById('proxy-pick-modal').classList.remove('show');
-  proxyAddTarget = staff;
-  const [m, d] = confirmDayKey.split('/').map(Number);
-  pendingMode = 'proxyAdd';
-  pendingDate = { month:m, day:d, key:confirmDayKey };
-  openModal(m, d, confirmStore);
-}
-
-// 時間入力モーダルの確定 → proxyShift で1件だけ登録（確定・通知はしない）
-async function submitProxyAdd(start, end) {
-  const [m, d] = confirmDayKey.split('/').map(Number);
-  const shifts = [{ month:m, day:d, start, end, storeId:confirmStore.id }];
-  try {
-    const data = await gasGet({
-      action:'proxyShift', lineId,
-      targetStaffId: proxyAddTarget.id, storeId: confirmStore.id,
-      shifts: JSON.stringify(shifts)
-    });
-    if (data && !data.ok) { alert('登録エラー: ' + (data.error || '不明')); return; }
-    if (data && data.errors && data.errors.length) { alert('一部登録できませんでした：\n' + data.errors.join('\n')); }
-    await loadConfirmData();           // カレンダー・バッジ更新
-    openConfirmModal(confirmDayKey);   // 統合モーダルへ戻る（画面移動なし）
-  } catch (e) { alert('登録エラー: ' + e.message); }
-}
-
-// この日の「確定（未通知）・見送り」をまとめて申請中へ戻す。通知済みは対象外（GAS側でも保護）。
-async function revertAllOfDay() {
-  const items = (confirmDays[confirmDayKey] || []).filter(it => (it.confirmed && !it.notified) || it.declined);
-  if (!items.length) { alert('この日に差し戻せる確定・見送りはありません。\n（通知済みは対象外です）'); return; }
-  if (!confirm(`${confirmDayKey} の${items.length}件を「申請中」に戻します。\n本人への通知はされません。よろしいですか？`)) return;
-  const btn = document.getElementById('cf-revert-all');
-  btn.disabled = true; const _l = btn.textContent; btn.textContent = '処理中...';
-  try {
-    const data = await gasGet({ action:'revertShifts', lineId, ids: JSON.stringify(items.map(it => it.id)) });
-    if (!data.ok) { alert('エラー: ' + (data.error || '不明')); return; }
-    await loadConfirmData();
-    openConfirmModal(confirmDayKey);
-  } catch (e) { alert('エラー: ' + e.message); }
-  finally { btn.disabled = false; btn.textContent = _l; }
-}
-
-// 統合モーダルからの削除（確認を挟む＝誤操作防止）。削除後はモーダルへ戻る。
-async function cfDelete(id, name) {
-  if (!confirm(`${confirmDayKey}　${name} さんのシフトを削除します。\n元に戻せません。よろしいですか？`)) return;
-  try {
-    const data = await gasGet({ action:'deleteShiftWeb', lineId, id });
-    if (data && !data.ok) { alert(data.error || '削除できませんでした'); return; }
-    await loadConfirmData();
-    openConfirmModal(confirmDayKey);
-  } catch (e) { alert('削除エラー: ' + e.message); }
 }
 
 function updateCfBtn() {
@@ -1420,7 +1411,7 @@ function showDone(label, saved, errors, mode) {
 // 時間モーダル（申請・代理共用）
 // ============================================================
 function openModal(month, day, store) {
-  const year = (pendingMode==='proxyAdd') ? confirmYear : applyYear;
+  const year = pendingMode==='proxy' ? proxyYear : applyYear;
   const dt=new Date(year,month-1,day);
   modalStore=store; modalDate={month,day};
   document.getElementById('modal-title').textContent=`${month}/${day}（${DOW[dt.getDay()]}）`;
@@ -1449,7 +1440,7 @@ function setModalPart(part) {
   pendingPart = part;
   document.getElementById('part-day').classList.toggle('active', part==='day');
   document.getElementById('part-night').classList.toggle('active', part==='night');
-  const year = (pendingMode==='proxyAdd') ? confirmYear : applyYear;
+  const year = pendingMode==='proxy' ? proxyYear : applyYear;
   const dow = new Date(year, modalDate.month-1, modalDate.day).getDay();
   renderModalPresets(modalStore, dow, part);
   document.getElementById('start-custom').value='';
@@ -1462,13 +1453,6 @@ function confirmTime() {
   if(!start){alert('開始時間を選んでください');return;}
   if(!end)  {alert('終了時間を選んでください');return;}
   const part = (document.getElementById('modal-part-toggle').style.display!=='none') ? pendingPart : null;
-  // SHIFT-017 代理追加：シフト管理の統合モーダルから1件だけ即登録（確定・通知はしない）
-  if (pendingMode==='proxyAdd') {
-    document.getElementById('modal').classList.remove('show');
-    pendingMode='apply';
-    submitProxyAdd(start, end);
-    return;
-  }
   // まとめて連続申請：選択した全日に同じ時間を適用
   if (pendingMode==='applyBatch') {
     Object.values(multiPicked).forEach(d=>{ applySelected[`${d.month}/${d.day}`]={month:d.month,day:d.day,start,end,storeId:applyStore.id,part}; });
@@ -1482,8 +1466,9 @@ function confirmTime() {
     pendingDate=null; pendingMode='apply'; return;
   }
   const {month,day,key}=pendingDate;
-  const entry={month,day,start,end,storeId:applyStore.id,part};
-  { applySelected[key]=entry; document.getElementById('modal').classList.remove('show'); renderApplyCal(); renderApplyList(); updateApplyBtn(); }
+  const entry={month,day,start,end,storeId:(pendingMode==='proxy'?proxyStore:applyStore).id,part};
+  if(pendingMode==='proxy'){ proxySelected[key]=entry; document.getElementById('modal').classList.remove('show'); renderProxyCal(); }
+  else { applySelected[key]=entry; document.getElementById('modal').classList.remove('show'); renderApplyCal(); renderApplyList(); updateApplyBtn(); }
   pendingDate=null;
 }
 
