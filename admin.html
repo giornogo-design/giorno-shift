@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>ジョルノ シフト管理（管理者）</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+/* ============================================================
+   ジョルノ 管理者UI v1
+   配信元は GitHub Pages のみ（GASのapp_webは参照しない）
+   単一ファイル・ビルド不要。CSS→HTML→JS の順で1回だけ読む構成。
+   ============================================================ */
+:root{
+  --bg:#f4f5f7; --card:#fff; --line:#e6e8eb; --txt:#222; --sub:#7a8290;
+  --brand:#1f7a3d; --brand-d:#155c2c; --warn:#e67e22; --danger:#c0392b;
+  --blue:#2b6cb0; --pad:12px; --nav-h:60px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+     background:var(--bg);color:var(--txt);font-size:15px;line-height:1.6;
+     padding-bottom:calc(var(--nav-h) + env(safe-area-inset-bottom))}
+button{font-family:inherit;font-size:inherit;cursor:pointer}
+.hide{display:none !important}
+
+/* --- 起動時・全画面状態 --- */
+#boot,#denied{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  background:var(--bg);z-index:100;padding:32px;text-align:center;gap:14px}
+.spin{width:34px;height:34px;border:3px solid #dfe3e8;border-top-color:var(--brand);border-radius:50%;animation:sp .8s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+#denied .icon{font-size:44px}
+#denied h1{font-size:19px;margin:0}
+#denied p{color:var(--sub);font-size:13px;margin:0;white-space:pre-wrap}
+
+/* --- ヘッダー：店舗切替 --- */
+header{position:sticky;top:0;z-index:20;background:var(--brand);color:#fff;
+  padding:calc(env(safe-area-inset-top) + 8px) var(--pad) 0}
+.hd-top{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:8px}
+.hd-title{font-size:16px;font-weight:700}
+.hd-who{font-size:11px;opacity:.85}
+.stores{display:flex;gap:6px;padding-bottom:10px;overflow-x:auto}
+.stores button{flex:1;min-width:72px;padding:8px 4px;border:none;border-radius:8px;
+  background:rgba(255,255,255,.18);color:#fff;font-size:13px;font-weight:600}
+.stores button.on{background:#fff;color:var(--brand)}
+
+/* --- 月ナビ --- */
+.mnav{display:flex;align-items:center;justify-content:space-between;padding:10px var(--pad);gap:8px}
+.mnav button{width:38px;height:38px;border:1px solid var(--line);background:var(--card);border-radius:10px;font-size:17px}
+.mnav .lbl{font-weight:700}
+
+/* --- バッジバー --- */
+.bars{padding:0 var(--pad)}
+.bar{display:flex;align-items:center;gap:10px;padding:11px 13px;border-radius:11px;margin-bottom:8px;font-size:13px}
+.bar.pend{background:#fff4e6;border:1px solid #f0b27a;color:#8a4b00}
+.bar.noti{background:#fffbe6;border:1px solid #f0d264;color:#7a6100}
+.bar b{font-size:16px}
+.bar .sp{flex:1}
+.bar button{padding:7px 13px;border:none;border-radius:16px;background:var(--brand);color:#fff;font-size:12px;font-weight:700}
+
+/* --- カレンダー --- */
+.cal{background:var(--card);margin:0 var(--pad) 14px;border-radius:12px;overflow:hidden;border:1px solid var(--line)}
+.cal-h,.cal-b{display:grid;grid-template-columns:repeat(7,1fr)}
+.cal-h div{text-align:center;font-size:11px;color:var(--sub);padding:7px 0;background:#fafbfc}
+.cal-h div:first-child{color:#c0392b}.cal-h div:last-child{color:#2b6cb0}
+.cell{min-height:60px;border-top:1px solid var(--line);border-right:1px solid var(--line);
+  padding:4px 3px;display:flex;flex-direction:column;gap:2px;background:none;text-align:left}
+.cell:nth-child(7n){border-right:none}
+.cell.void{background:#fafbfc}
+.cell .d{font-size:12px;color:var(--sub);font-weight:600}
+.cell.sun .d{color:#c0392b}.cell.sat .d{color:#2b6cb0}
+.cell.off{background:#f3f4f6}
+.cell.off .d{opacity:.45}
+.chip{font-size:10px;line-height:1.5;border-radius:4px;padding:0 3px;font-weight:700}
+.c-pend{background:#fdebd0;color:#8a4b00}
+.c-conf{background:#d5f0dd;color:#1c6b38}
+.c-noti{background:#dbe9f7;color:#1c4f80}
+.c-off{background:#e8e8e8;color:#666}
+.c-mtg{background:#efe0f7;color:#6b3a8a}
+
+/* --- 一覧・カード --- */
+.wrap{padding:0 var(--pad) 20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px;margin-bottom:10px}
+.row{display:flex;align-items:center;gap:10px;padding:11px 12px;background:var(--card);
+  border:1px solid var(--line);border-radius:11px;margin-bottom:8px;width:100%;text-align:left}
+.row .nm{font-weight:600;font-size:14px}
+.row .mt{font-size:11px;color:var(--sub)}
+.row .sp{flex:1}
+.tag{font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap}
+.t-pend{background:#fdebd0;color:#8a4b00}.t-conf{background:#d5f0dd;color:#1c6b38}
+.t-noti{background:#dbe9f7;color:#1c4f80}.t-decl{background:#eee;color:#777}
+.t-nolink{background:#fdebd0;color:#8a4b00}
+.empty{text-align:center;color:var(--sub);font-size:13px;padding:26px 10px}
+
+/* --- 入力・ボタン --- */
+label.fld{display:block;font-size:12px;color:var(--sub);font-weight:600;margin:10px 0 4px}
+input[type=text],input[type=time],select{width:100%;padding:10px 12px;border:1px solid #d8dce1;
+  border-radius:9px;font-size:15px;background:#fff}
+.btn{width:100%;padding:13px;border:none;border-radius:11px;font-size:15px;font-weight:700;margin-top:10px}
+.btn.pri{background:var(--brand);color:#fff}
+.btn.sec{background:#eef0f2;color:#444}
+.btn.warn{background:#fff3e6;color:var(--warn);border:1.5px solid #f0b27a}
+.btn.dang{background:#fdecea;color:var(--danger);border:1.5px solid #f0a9a0}
+.btn:disabled{opacity:.45}
+.msg{padding:10px 12px;border-radius:9px;font-size:13px;white-space:pre-wrap;margin-top:10px}
+.msg.ok{background:#eaf7ef;color:#1c6b38;border:1px solid #b9e2c9}
+.msg.ng{background:#fdecea;color:var(--danger);border:1px solid #f3bdb6}
+
+/* --- シート（下から出るモーダル） --- */
+.sheet{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.45);display:none;align-items:flex-end}
+.sheet.on{display:flex}
+.sheet-in{background:var(--bg);width:100%;max-height:88vh;overflow-y:auto;
+  border-radius:16px 16px 0 0;padding:16px var(--pad) calc(20px + env(safe-area-inset-bottom))}
+.sheet-t{font-size:16px;font-weight:700;margin-bottom:2px}
+.sheet-s{font-size:12px;color:var(--sub);margin-bottom:12px}
+.pick{display:flex;align-items:center;gap:10px;padding:11px 12px;background:var(--card);
+  border:1.5px solid var(--line);border-radius:11px;margin-bottom:8px;width:100%;text-align:left}
+.pick.sel{border-color:var(--brand);background:#f0f9f3}
+.pick .box{width:21px;height:21px;border:2px solid #ccd2d8;border-radius:6px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;font-size:13px;color:#fff}
+.pick.sel .box{background:var(--brand);border-color:var(--brand)}
+.presets{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.presets button{padding:8px 12px;border:1px solid #d8dce1;background:#fff;border-radius:8px;font-size:13px}
+.presets button.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+
+/* --- 下部ナビ（最大4） --- */
+nav{position:fixed;left:0;right:0;bottom:0;z-index:50;display:flex;background:var(--card);
+  border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;border:none;background:none;padding:7px 0 6px;color:var(--sub);
+  display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10px;position:relative}
+nav button .ic{font-size:19px;line-height:1}
+nav button.on{color:var(--brand);font-weight:700}
+nav .dot{position:absolute;top:4px;right:calc(50% - 20px);min-width:16px;height:16px;padding:0 4px;
+  background:var(--danger);color:#fff;border-radius:8px;font-size:10px;font-weight:700;
+  display:flex;align-items:center;justify-content:center}
+
+/* --- テストモード帯 --- */
+#stubbar{position:fixed;top:0;left:0;right:0;z-index:200;background:var(--danger);color:#fff;
+  font-size:11px;font-weight:700;text-align:center;padding:3px}
+body.stub header{padding-top:calc(env(safe-area-inset-top) + 26px)}
+#net{position:fixed;top:0;left:0;right:0;height:3px;background:var(--brand);z-index:150;
+  transform:scaleX(0);transform-origin:left;transition:transform .25s}
+#net.on{transform:scaleX(.85)}
+</style>
+</head>
+<body>
+
+<div id="net"></div>
+<div id="stubbar" class="hide">テストモード：書き込みAPIは送信されません</div>
+
+<!-- 起動中 -->
+<div id="boot"><div class="spin"></div><div style="font-size:13px;color:#7a8290">読み込み中...</div></div>
+
+<!-- 管理者以外／エラー（※一般画面には絶対に落とさない） -->
+<div id="denied" class="hide">
+  <div class="icon">🔒</div>
+  <h1 id="denied-t">管理者権限がありません</h1>
+  <p id="denied-p">この画面は管理者専用です。</p>
+  <button class="btn sec" style="max-width:240px" onclick="location.reload()">再読み込み</button>
+</div>
+
+<div id="app" class="hide">
+  <header>
+    <div class="hd-top">
+      <div class="hd-title" id="scr-title">シフト</div>
+      <div class="hd-who" id="who"></div>
+    </div>
+    <div class="stores" id="stores"></div>
+  </header>
+
+  <!-- ① シフト -->
+  <section id="s-shift">
+    <div class="mnav">
+      <button id="m-prev">‹</button><div class="lbl" id="m-lbl"></div><button id="m-next">›</button>
+    </div>
+    <div class="bars">
+      <div class="bar pend hide" id="bar-pend"><div class="sp"><b id="n-pend">0</b> 件の申請が未処理です</div></div>
+      <div class="bar noti hide" id="bar-noti"><div class="sp"><b id="n-noti">0</b> 件の確定が未通知です</div>
+        <button id="btn-noti">確認</button></div>
+    </div>
+    <div class="cal"><div class="cal-h" id="cal-h"></div><div class="cal-b" id="cal-b"></div></div>
+  </section>
+
+  <!-- ② 代理申請 -->
+  <section id="s-proxy" class="hide">
+    <div class="wrap">
+      <div class="card">
+        <div style="font-weight:700;margin-bottom:2px">代理でシフトを登録</div>
+        <div style="font-size:12px;color:var(--sub)">保存のみ行います。確定・LINE通知は行いません。</div>
+        <label class="fld">スタッフ</label>
+        <select id="px-staff"></select>
+        <label class="fld">日付</label>
+        <select id="px-day"></select>
+        <label class="fld">開始</label>
+        <input type="time" id="px-start" step="300">
+        <div class="presets" id="px-sp"></div>
+        <label class="fld">終了</label>
+        <input type="time" id="px-end" step="300">
+        <div class="presets" id="px-ep"></div>
+        <button class="btn pri" id="px-do">この内容で登録</button>
+        <div id="px-msg" class="msg hide"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ③ 営業日 -->
+  <section id="s-days" class="hide">
+    <div class="mnav">
+      <button id="d-prev">‹</button><div class="lbl" id="d-lbl"></div><button id="d-next">›</button>
+    </div>
+    <div class="cal"><div class="cal-h" id="dcal-h"></div><div class="cal-b" id="dcal-b"></div></div>
+    <div class="wrap"><div class="card" style="font-size:12px;color:var(--sub)">
+      日付をタップして「休業／営業／ミーティング」を切り替えます。<br>
+      定休日はグレー表示です。臨時営業にすると定休日でも申請できます。
+    </div></div>
+  </section>
+
+  <!-- ④ スタッフ -->
+  <section id="s-staff" class="hide">
+    <div class="wrap">
+      <button class="btn pri" id="st-new">＋ 新規スタッフ登録</button>
+      <div id="st-list"><div class="empty">読み込み中...</div></div>
+    </div>
+  </section>
+
+  <nav>
+    <button id="nav-shift" class="on"><span class="ic">🗂</span>シフト<span class="dot hide" id="dot-shift">0</span></button>
+    <button id="nav-proxy"><span class="ic">👥</span>代理申請</button>
+    <button id="nav-days"><span class="ic">🗓</span>営業日</button>
+    <button id="nav-staff"><span class="ic">🧑</span>スタッフ</button>
+  </nav>
+</div>
+
+<!-- 汎用シート -->
+<div class="sheet" id="sheet"><div class="sheet-in">
+  <div class="sheet-t" id="sheet-t"></div>
+  <div class="sheet-s" id="sheet-s"></div>
+  <div id="sheet-body"></div>
+  <button class="btn sec" id="sheet-close">閉じる</button>
+</div></div>
+
+<script>
+'use strict';
+/* ============================================================
+   設定 — 既存資産をそのまま再利用（GAS v152 / LIFF）
+   ============================================================ */
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbx-aqsCqJuKL1F-eClOgwiZfmIQDfvyVHWXxA8AQJjk5o4TAabhxKQoKTaO9NrOUcec/exec';
+const LIFF_ID = '2010395925-JfheOL3d';
+const DOW = ['日','月','火','水','木','金','土'];
+// 書き込みAPI一覧。テストモード(?stub=1)ではこれらを送信せず疑似応答を返す。
+const WRITE_ACTIONS = ['confirmShifts','declineShifts','revertShifts','notifyConfirmed',
+                       'proxyShift','adminAddStaff','setDayType','setMeeting'];
+const STUB = new URLSearchParams(location.search).get('stub') === '1';
+
+let me = null, lineId = '', store = null, stores = [];
+let today = new Date(), calY = today.getFullYear(), calM = today.getMonth() + 1;
+let dayY = calY, dayM = calM;
+let confirmDays = {}, dayStatus = null, staffList = [];
+
+/* ============================================================
+   通信 — 1本の api() に集約（GAS_URL・パラメータ形式は既存踏襲）
+   ============================================================ */
+let busy = 0;
+function net(on){ busy = Math.max(0, busy + (on ? 1 : -1));
+  document.getElementById('net').classList.toggle('on', busy > 0); }
+
+async function api(action, params = {}) {
+  if (STUB && WRITE_ACTIONS.includes(action)) {
+    console.log('[STUB] 送信せず:', action, params);
+    await new Promise(r => setTimeout(r, 250));
+    return { ok: true, _stub: true, staffId: 'PT999', name: params.name || '', saved: ['(テスト)'], errors: [] };
+  }
+  const q = new URLSearchParams({ action, lineId, ...params });
+  net(true);
+  try {
+    const r = await fetch(GAS_URL + '?' + q.toString());
+    const t = await r.text();
+    try { return JSON.parse(t); }
+    catch (e) { throw new Error('応答が不正です: ' + t.slice(0, 80)); }
+  } finally { net(false); }
+}
+
+/* ============================================================
+   起動 — 管理者以外は絶対に一般画面へ落とさない
+   ============================================================ */
+function deny(title, detail) {
+  document.getElementById('boot').classList.add('hide');
+  document.getElementById('app').classList.add('hide');
+  document.getElementById('denied').classList.remove('hide');
+  document.getElementById('denied-t').textContent = title;
+  document.getElementById('denied-p').textContent = detail || '';
+}
+
+async function boot() {
+  if (STUB) { document.getElementById('stubbar').classList.remove('hide'); document.body.classList.add('stub'); }
+  try {
+    await liff.init({ liffId: LIFF_ID });
+    if (!liff.isLoggedIn()) {
+      // 外部ブラウザでもこの管理画面へ戻す（既定だとLIFFのEndpoint＝申請画面へ着地するため）
+      liff.login({ redirectUri: location.href });
+      return;
+    }
+    const p = await liff.getProfile();
+    lineId = p.userId;
+  } catch (e) {
+    return deny('読み込みに失敗しました', 'LINEアプリを再起動してお試しください。\n\n' + e.message);
+  }
+
+  let d;
+  try { d = await api('getStaff'); }
+  catch (e) { return deny('サーバーに接続できません', e.message); }
+
+  if (!d || !d.ok)      return deny('スタッフ情報を取得できません', (d && d.error) || '');
+  if (d.isAdmin !== true) return deny('管理者権限がありません',
+      `${d.name || ''} さんは管理者として登録されていません。\nシフト申請は申請画面をご利用ください。`);
+
+  me = d;
+  stores = d.stores || [];
+  if (!stores.length) return deny('担当店舗が設定されていません', '管理者にお問い合わせください。');
+  store = stores[0];
+  start();
+}
+
+function start() {
+  document.getElementById('boot').classList.add('hide');
+  document.getElementById('app').classList.remove('hide');
+  document.getElementById('who').textContent = me.name + ' さん';
+  renderStores();
+  bind();
+  go('shift');
+}
+
+/* ============================================================
+   画面共通
+   ============================================================ */
+function renderStores() {
+  const el = document.getElementById('stores');
+  el.innerHTML = '';
+  stores.forEach(s => {
+    const b = document.createElement('button');
+    b.textContent = s.name;
+    b.className = (s.id === store.id) ? 'on' : '';
+    b.onclick = () => { store = s; renderStores(); reloadCurrent(); };
+    el.appendChild(b);
+  });
+}
+
+const SCREENS = { shift:'シフト', proxy:'代理申請', days:'営業日', staff:'スタッフ' };
+let screen = 'shift';
+
+function go(name) {
+  screen = name;
+  Object.keys(SCREENS).forEach(k => {
+    document.getElementById('s-' + k).classList.toggle('hide', k !== name);
+    document.getElementById('nav-' + k).classList.toggle('on', k === name);
+  });
+  document.getElementById('scr-title').textContent = SCREENS[name];
+  reloadCurrent();
+}
+
+function reloadCurrent() {
+  if (screen === 'shift') loadShift();
+  if (screen === 'proxy') loadProxy();
+  if (screen === 'days')  loadDays();
+  if (screen === 'staff') loadStaff();
+}
+
+function bind() {
+  Object.keys(SCREENS).forEach(k => document.getElementById('nav-' + k).onclick = () => go(k));
+  document.getElementById('m-prev').onclick = () => { calM--; if (calM < 1) { calM = 12; calY--; } loadShift(); };
+  document.getElementById('m-next').onclick = () => { calM++; if (calM > 12) { calM = 1; calY++; } loadShift(); };
+  document.getElementById('d-prev').onclick = () => { dayM--; if (dayM < 1) { dayM = 12; dayY--; } loadDays(); };
+  document.getElementById('d-next').onclick = () => { dayM++; if (dayM > 12) { dayM = 1; dayY++; } loadDays(); };
+  document.getElementById('sheet-close').onclick = closeSheet;
+  document.getElementById('sheet').onclick = e => { if (e.target.id === 'sheet') closeSheet(); };
+  document.getElementById('btn-noti').onclick = openNotify;
+  document.getElementById('px-do').onclick = doProxy;
+  document.getElementById('st-new').onclick = openNewStaff;
+  ['cal-h','dcal-h'].forEach(id => {
+    document.getElementById(id).innerHTML = DOW.map(d => `<div>${d}</div>`).join('');
+  });
+}
+
+function openSheet(title, sub) {
+  document.getElementById('sheet-t').textContent = title;
+  document.getElementById('sheet-s').textContent = sub || '';
+  document.getElementById('sheet-body').innerHTML = '';
+  document.getElementById('sheet').classList.add('on');
+  return document.getElementById('sheet-body');
+}
+function closeSheet() { document.getElementById('sheet').classList.remove('on'); }
+
+// 月グリッドを組む共通処理（描画内容は cb に任せる）
+function grid(el, year, month, cb) {
+  el.innerHTML = '';
+  const first = new Date(year, month - 1, 1).getDay();
+  const last  = new Date(year, month, 0).getDate();
+  for (let i = 0; i < first; i++) el.insertAdjacentHTML('beforeend', '<div class="cell void"></div>');
+  for (let d = 1; d <= last; d++) {
+    const dow = new Date(year, month - 1, d).getDay();
+    const b = document.createElement('button');
+    b.className = 'cell' + (dow === 0 ? ' sun' : dow === 6 ? ' sat' : '');
+    b.innerHTML = `<span class="d">${d}</span>`;
+    cb(b, d, dow);
+    el.appendChild(b);
+  }
+}
+
+/* ============================================================
+   ① シフト（確認・確定・見送り・取消・通知）
+   ============================================================ */
+async function loadShift() {
+  document.getElementById('m-lbl').textContent = `${calY}年${calM}月`;
+  const el = document.getElementById('cal-b');
+  el.innerHTML = '<div class="empty" style="grid-column:1/8">読み込み中...</div>';
+  const d = await api('getConfirmCal', { storeId: store.id, year: calY, month: calM });
+  if (!d.ok) { el.innerHTML = `<div class="empty" style="grid-column:1/8">${d.error || 'エラー'}</div>`; return; }
+  confirmDays = d.days || {};
+
+  let pend = 0;
+  Object.values(confirmDays).forEach(list =>
+    list.forEach(it => { if (!it.confirmed && !it.declined) pend++; }));
+
+  toggleBar('bar-pend', 'n-pend', pend);
+  toggleBar('bar-noti', 'n-noti', d.pendingNotifyStore || 0);
+  const dot = document.getElementById('dot-shift');
+  dot.textContent = pend;
+  dot.classList.toggle('hide', pend === 0);
+
+  grid(el, calY, calM, (cell, day) => {
+    const items = confirmDays[`${calM}/${day}`] || [];
+    const c = { pend:0, conf:0, noti:0 };
+    items.forEach(it => {
+      if (it.declined) return;
+      if (it.notified) c.noti++;
+      else if (it.confirmed) c.conf++;
+      else c.pend++;
+    });
+    if (c.pend) cell.insertAdjacentHTML('beforeend', `<span class="chip c-pend">申${c.pend}</span>`);
+    if (c.conf) cell.insertAdjacentHTML('beforeend', `<span class="chip c-conf">確${c.conf}</span>`);
+    if (c.noti) cell.insertAdjacentHTML('beforeend', `<span class="chip c-noti">済${c.noti}</span>`);
+    cell.onclick = () => openDay(day);
+  });
+}
+
+function toggleBar(barId, numId, n) {
+  document.getElementById(numId).textContent = n;
+  document.getElementById(barId).classList.toggle('hide', n === 0);
+  document.getElementById(barId).style.display = n === 0 ? 'none' : 'flex';
+}
+
+function openDay(day) {
+  const key = `${calM}/${day}`;
+  const items = confirmDays[key] || [];
+  const dow = DOW[new Date(calY, calM - 1, day).getDay()];
+  const body = openSheet(`${calM}/${day}（${dow}）`, `${store.name}　${items.length}件`);
+  if (!items.length) { body.innerHTML = '<div class="empty">この日のシフトはありません</div>'; return; }
+
+  const sel = new Set();
+  const list = document.createElement('div');
+  items.forEach(it => {
+    const st = it.declined ? ['t-decl','見送り'] : it.notified ? ['t-noti','通知済']
+             : it.confirmed ? ['t-conf','確定'] : ['t-pend','申請中'];
+    const b = document.createElement('button');
+    b.className = 'pick';
+    b.innerHTML = `<span class="box">✓</span>
+      <span><span class="nm">${esc(it.name)}</span>
+      <span class="mt">${it.rest ? '休み' : esc(it.start) + '〜' + esc(it.end)}${it.skill ? '　' + esc(it.skill) : ''}</span></span>
+      <span class="sp"></span><span class="tag ${st[0]}">${st[1]}</span>`;
+    b.onclick = () => {
+      if (sel.has(it.id)) sel.delete(it.id); else sel.add(it.id);
+      b.classList.toggle('sel', sel.has(it.id));
+      upd();
+    };
+    list.appendChild(b);
+  });
+  body.appendChild(list);
+
+  const acts = document.createElement('div');
+  acts.innerHTML = `
+    <button class="btn pri"  id="a-conf" disabled>選択した0件を確定</button>
+    <button class="btn warn" id="a-decl" disabled>選択した0件を見送り</button>
+    <button class="btn sec"  id="a-rev"  disabled>選択した0件を申請中に戻す</button>`;
+  body.appendChild(acts);
+
+  function upd() {
+    const n = sel.size;
+    ['a-conf','a-decl','a-rev'].forEach(id => document.getElementById(id).disabled = n === 0);
+    document.getElementById('a-conf').textContent = `選択した${n}件を確定`;
+    document.getElementById('a-decl').textContent = `選択した${n}件を見送り`;
+    document.getElementById('a-rev').textContent  = `選択した${n}件を申請中に戻す`;
+  }
+  const run = async (action, label) => {
+    if (!confirm(`${sel.size}件を${label}します。よろしいですか？`)) return;
+    const r = await api(action, { ids: JSON.stringify([...sel]) });
+    if (!r.ok) { alert('エラー: ' + (r.error || '不明')); return; }
+    if (r.failed) alert(`${r.failed}件はカレンダー予定を特定できず変更していません。`);
+    closeSheet(); await loadShift();
+    alert(`${label}しました${r._stub ? '（テストモード：実際には送信していません）' : ''}`);
+  };
+  document.getElementById('a-conf').onclick = () => run('confirmShifts', '確定');
+  document.getElementById('a-decl').onclick = () => run('declineShifts', '見送り');
+  document.getElementById('a-rev').onclick  = () => run('revertShifts', '申請中に戻');
+}
+
+async function openNotify() {
+  const body = openSheet('未通知の確定シフト', `${store.name}　選んだスタッフにLINEで送信します`);
+  body.innerHTML = '<div class="empty">読み込み中...</div>';
+  const d = await api('getPendingNotifyList', { storeId: store.id });
+  if (!d.ok) { body.innerHTML = `<div class="empty">${d.error || 'エラー'}</div>`; return; }
+  const list = d.list || [];
+  if (!list.length) { body.innerHTML = '<div class="empty">未通知のシフトはありません</div>'; return; }
+
+  const byStaff = {};
+  list.forEach(it => (byStaff[it.staffId] = byStaff[it.staffId] || { name: it.name, rows: [] }).rows.push(it));
+  const sel = new Set(Object.keys(byStaff));   // 既定は全員ON
+  body.innerHTML = '';
+  Object.entries(byStaff).forEach(([sid, v]) => {
+    const b = document.createElement('button');
+    b.className = 'pick sel';
+    b.innerHTML = `<span class="box">✓</span>
+      <span><span class="nm">${esc(v.name)}</span>
+      <span class="mt">${v.rows.map(r => `${r.date}(${r.dow}) ${r.start}〜${r.end}`).join(' / ')}</span></span>`;
+    b.onclick = () => { sel.has(sid) ? sel.delete(sid) : sel.add(sid); b.classList.toggle('sel', sel.has(sid)); upd(); };
+    body.appendChild(b);
+  });
+  const btn = document.createElement('button');
+  btn.className = 'btn pri';
+  body.appendChild(btn);
+  const upd = () => { btn.textContent = `${sel.size}名にLINEで通知`; btn.disabled = sel.size === 0; };
+  upd();
+  btn.onclick = async () => {
+    if (!confirm(`${sel.size}名へ確定シフトのLINE通知を送信します。\n送信後は取り消せません。よろしいですか？`)) return;
+    const r = await api('notifyConfirmed', { storeId: store.id, staffIds: JSON.stringify([...sel]) });
+    if (!r.ok) { alert('エラー: ' + (r.error || '不明')); return; }
+    closeSheet(); await loadShift();
+    alert(`通知しました${r._stub ? '（テストモード：実際には送信していません）' : ''}`);
+  };
+}
+
+/* ============================================================
+   ② 代理申請
+   ============================================================ */
+const START_P = { S001:['19:00','20:00','21:00','22:00'], S002:['17:00','18:00','19:00','20:00'], S003:['16:30','17:00','18:00'] };
+const END_P   = { S001:['23:00','24:00','25:00','28:00'], S002:['23:00','24:00','25:00'],          S003:['22:00','23:00','23:30'] };
+
+async function loadProxy() {
+  const sel = document.getElementById('px-staff');
+  const btn = document.getElementById('px-do');
+  // 読み込み完了までは送信不可。option に value="" を持たせないと select.value が
+  // 表示文字列（"読み込み中..."）を返し、不正な targetStaffId を送ってしまう。
+  sel.innerHTML = '<option value="">読み込み中...</option>';
+  btn.disabled = true;
+  fillDays(document.getElementById('px-day'));
+  fillPresets('px-sp', 'px-start', START_P[store.id] || []);
+  fillPresets('px-ep', 'px-end',   END_P[store.id]   || []);
+  const d = await api('getStaffList');
+  if (!d.ok) { sel.innerHTML = `<option value="">${d.error || 'エラー'}</option>`; return; }
+  btn.disabled = false;
+  staffList = d.staff || [];
+  const target = staffList.filter(s => !s.stores || !s.stores.length || s.stores.includes(store.id));
+  const show = target.length ? target : staffList;
+  sel.innerHTML = show.map(s =>
+    `<option value="${s.id}">${esc(s.name)}${s.hasLine === false ? '（LINE未連携）' : ''}</option>`).join('');
+}
+
+function fillDays(sel) {
+  const opts = [];
+  for (let i = 0; i < 62; i++) {
+    const d = new Date(); d.setDate(d.getDate() + i);
+    opts.push(`<option value="${d.getMonth()+1}/${d.getDate()}">${d.getMonth()+1}/${d.getDate()}（${DOW[d.getDay()]}）</option>`);
+  }
+  sel.innerHTML = opts.join('');
+}
+function fillPresets(wrapId, inputId, arr) {
+  const w = document.getElementById(wrapId); w.innerHTML = '';
+  arr.forEach(t => {
+    const b = document.createElement('button');
+    b.textContent = t.length === 5 && +t.slice(0,2) >= 24 ? '翌' + (+t.slice(0,2) - 24) + t.slice(2) : t;
+    b.onclick = () => {
+      document.getElementById(inputId).value = t.length === 5 && +t.slice(0,2) >= 24 ? '' : t;
+      document.getElementById(inputId).dataset.raw = t;
+      [...w.children].forEach(c => c.classList.remove('on')); b.classList.add('on');
+    };
+    w.appendChild(b);
+  });
+}
+function timeOf(inputId) {
+  const el = document.getElementById(inputId);
+  const on = el.parentElement.querySelector('.presets button.on');
+  return (on && el.dataset.raw && !el.value) ? el.dataset.raw : el.value;
+}
+
+async function doProxy() {
+  const msg = document.getElementById('px-msg');
+  const show = (t, ok) => { msg.textContent = t; msg.className = 'msg ' + (ok ? 'ok' : 'ng'); };
+  const sel = document.getElementById('px-staff');
+  const staffId = sel.value, staffName = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : '';
+  const [m, d] = document.getElementById('px-day').value.split('/').map(Number);
+  const start = timeOf('px-start'), end = timeOf('px-end');
+  if (!staffId) return show('スタッフを選んでください', false);
+  if (!start || !end) return show('開始時間と終了時間を選んでください', false);
+  if (!confirm(`${staffName}\n${m}/${d}　${store.name}　${start}〜${end}\n\nこの内容で登録します。よろしいですか？`)) return;
+
+  const btn = document.getElementById('px-do');
+  btn.disabled = true; btn.textContent = '登録中...';
+  try {
+    const r = await api('proxyShift', {
+      targetStaffId: staffId, storeId: store.id,
+      shifts: JSON.stringify([{ month: m, day: d, start, end }])
+    });
+    if (!r.ok) return show('登録エラー: ' + (r.error || '不明'), false);
+    if (r.errors && r.errors.length) return show('一部登録できませんでした：\n' + r.errors.join('\n'), false);
+    show(`登録しました（${(r.saved || []).join(', ')}）${r._stub ? '／テストモード' : ''}\n申請中として保存しました。確定は「シフト」画面から行ってください。`, true);
+  } catch (e) { show('通信エラー: ' + e.message, false); }
+  finally { btn.disabled = false; btn.textContent = 'この内容で登録'; }
+}
+
+/* ============================================================
+   ③ 営業日
+   ============================================================ */
+async function loadDays() {
+  document.getElementById('d-lbl').textContent = `${dayY}年${dayM}月`;
+  const el = document.getElementById('dcal-b');
+  el.innerHTML = '<div class="empty" style="grid-column:1/8">読み込み中...</div>';
+  const d = await api('getDayStatus', { storeId: store.id, month: dayM });
+  if (!d.ok) { el.innerHTML = `<div class="empty" style="grid-column:1/8">${d.error || 'エラー'}</div>`; return; }
+  dayStatus = d;
+  const H = new Set(d.holidays || []), O = new Set(d.specialOpens || []), M = new Set(d.meetings || []);
+  const fixed = d.fixedOff || [];
+
+  grid(el, dayY, dayM, (cell, day, dow) => {
+    const key = `${dayM}/${day}`;
+    const isOff = H.has(key) || (fixed.includes(dow) && !O.has(key));
+    if (isOff) cell.classList.add('off');
+    if (H.has(key))      cell.insertAdjacentHTML('beforeend', '<span class="chip c-off">休業</span>');
+    else if (O.has(key)) cell.insertAdjacentHTML('beforeend', '<span class="chip c-conf">営業</span>');
+    else if (fixed.includes(dow)) cell.insertAdjacentHTML('beforeend', '<span class="chip c-off">定休</span>');
+    if (M.has(key))      cell.insertAdjacentHTML('beforeend', '<span class="chip c-mtg">会議</span>');
+    cell.onclick = () => openDayEdit(day, dow, H.has(key), O.has(key), M.has(key), fixed.includes(dow));
+  });
+}
+
+function openDayEdit(day, dow, isHol, isOpen, isMtg, isFixed) {
+  const body = openSheet(`${dayM}/${day}（${DOW[dow]}）`,
+    `${store.name}${isFixed ? '　※この曜日は定休日です' : ''}`);
+  const mk = (label, cls, fn) => {
+    const b = document.createElement('button');
+    b.className = 'btn ' + cls; b.textContent = label; b.onclick = fn; body.appendChild(b);
+  };
+  const setType = async (type, label) => {
+    if (!confirm(`${dayM}/${day} を「${label}」にします。よろしいですか？`)) return;
+    const r = await api('setDayType', { storeId: store.id, month: dayM, day, type });
+    if (!r.ok) { alert('エラー: ' + (r.error || '不明')); return; }
+    closeSheet(); await loadDays();
+  };
+  if (!isHol)  mk('🚫 休業にする', 'dang', () => setType('holiday', '休業'));
+  if (!isOpen && isFixed) mk('✅ 臨時営業にする', 'pri', () => setType('open', '営業'));
+  if (isHol || isOpen) mk('↩︎ 通常に戻す', 'sec', () => setType('normal', '通常'));
+  mk(isMtg ? '🧑‍🤝‍🧑 ミーティングを解除' : '🧑‍🤝‍🧑 ミーティングにする', 'warn', async () => {
+    const r = await api('setMeeting', { storeId: store.id, month: dayM, day, on: isMtg ? 'false' : 'true' });
+    if (!r.ok) { alert('エラー: ' + (r.error || '不明')); return; }
+    closeSheet(); await loadDays();
+  });
+}
+
+/* ============================================================
+   ④ スタッフ
+   ============================================================ */
+async function loadStaff() {
+  const el = document.getElementById('st-list');
+  el.innerHTML = '<div class="empty">読み込み中...</div>';
+  const d = await api('getStaffList');
+  if (!d.ok) { el.innerHTML = `<div class="empty">${d.error || 'エラー'}</div>`; return; }
+  staffList = d.staff || [];
+  const mine = staffList.filter(s => !s.stores || !s.stores.length || s.stores.includes(store.id));
+  el.innerHTML = `<div style="font-size:12px;color:var(--sub);margin:14px 0 8px">
+    ${store.name}のスタッフ ${mine.length}名（在籍 全${staffList.length}名）</div>`;
+  mine.forEach(s => {
+    el.insertAdjacentHTML('beforeend', `<div class="row">
+      <span><span class="nm">${esc(s.name)}</span><span class="mt">${s.id}</span></span>
+      <span class="sp"></span>
+      ${s.hasLine === false ? '<span class="tag t-nolink">LINE未連携</span>' : ''}</div>`);
+  });
+}
+
+function openNewStaff() {
+  const body = openSheet('新規スタッフ登録', '登録するとすぐ代理申請の対象になります');
+  body.innerHTML = `
+    <label class="fld">氏名</label><input type="text" id="ns-name" maxlength="20" placeholder="例：山田花子">
+    <label class="fld">所属店舗</label>
+    <select id="ns-store">${stores.map(s => `<option value="${s.id}"${s.id===store.id?' selected':''}>${esc(s.name)}</option>`).join('')}</select>
+    <label class="fld">雇用区分</label>
+    <select id="ns-emp"><option value="アルバイト">アルバイト</option><option value="社員">社員</option></select>
+    <div style="font-size:11px;color:var(--sub);margin-top:10px">
+      ※ LINE連携・タイムカード・給与への登録は別途必要です。<br>
+      ※ 確定通知は本人がLINEで「登録」するまで届きません。</div>
+    <button class="btn pri" id="ns-do">この内容で登録</button>
+    <div id="ns-msg" class="msg hide"></div>`;
+  document.getElementById('ns-do').onclick = async () => {
+    const msg = document.getElementById('ns-msg');
+    const show = (t, ok) => { msg.textContent = t; msg.className = 'msg ' + (ok ? 'ok' : 'ng'); };
+    const name = document.getElementById('ns-name').value.trim();
+    const storeId = document.getElementById('ns-store').value;
+    const empType = document.getElementById('ns-emp').value;
+    if (!name) return show('氏名を入力してください', false);
+    const sn = (stores.find(s => s.id === storeId) || {}).name || storeId;
+    if (!confirm(`氏名：${name}\n所属店舗：${sn}\n雇用区分：${empType}\n\nこの内容で登録します。よろしいですか？`)) return;
+    const btn = document.getElementById('ns-do');
+    btn.disabled = true; btn.textContent = '登録中...';
+    try {
+      const r = await api('adminAddStaff', { name, storeId, empType });
+      if (!r.ok) return show(r.error || '登録できませんでした', false);
+      show(`${r.name}さん（${r.staffId}）を登録しました${r._stub ? '／テストモード' : ''}`, true);
+      await loadStaff();
+    } catch (e) { show('通信エラー: ' + e.message, false); }
+    finally { btn.disabled = false; btn.textContent = 'この内容で登録'; }
+  };
+}
+
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+boot();
+</script>
+</body>
+</html>
