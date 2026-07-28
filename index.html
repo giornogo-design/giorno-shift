@@ -445,7 +445,42 @@ button:disabled { opacity: .55; cursor: not-allowed; }
     <div class="modal-title">代理で追加するスタッフ</div>
     <div class="modal-sub" id="proxy-pick-sub"></div>
     <div id="proxy-pick-body"><div class="empty-state">読み込み中...</div></div>
+    <button class="cf-tool-btn" id="staff-add-open" style="width:100%;margin-top:4px">＋ 新規スタッフ登録</button>
     <button class="btn-cancel" id="proxy-pick-close">キャンセル</button>
+  </div>
+</div>
+
+<!-- 新規スタッフ登録モーダル（管理者・SHIFT-018 最小版） -->
+<!-- 氏名・所属店舗・雇用区分のみ。LINE連携／タイムカード／人件費への登録は行わない。 -->
+<div class="modal-overlay" id="staff-add-modal">
+  <div class="modal">
+    <div class="modal-title">新規スタッフ登録</div>
+    <div class="modal-sub">登録するとすぐに代理でシフトを入れられます</div>
+    <div class="time-section">
+      <div class="time-label">▶ 氏名</div>
+      <input type="text" id="staff-add-name" maxlength="20" placeholder="例：山田花子"
+             style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:15px;box-sizing:border-box">
+    </div>
+    <div class="time-section">
+      <div class="time-label">▶ 所属店舗</div>
+      <select id="staff-add-store"
+              style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:15px;background:#fff;box-sizing:border-box"></select>
+    </div>
+    <div class="time-section">
+      <div class="time-label">▶ 雇用区分</div>
+      <select id="staff-add-emp"
+              style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:15px;background:#fff;box-sizing:border-box">
+        <option value="アルバイト">アルバイト</option>
+        <option value="社員">社員</option>
+      </select>
+    </div>
+    <div style="margin:4px 0 12px;font-size:11px;color:#888;line-height:1.7">
+      ※ LINE連携・タイムカード・給与システムへの登録は別途必要です。<br>
+      ※ シフト確定のLINE通知は、本人がLINEで「登録」するまで届きません。
+    </div>
+    <div id="staff-add-msg" style="display:none;margin-bottom:10px;padding:10px 12px;border-radius:8px;font-size:13px;line-height:1.6;white-space:pre-wrap"></div>
+    <button class="btn-confirm" id="staff-add-do">この内容で登録</button>
+    <button class="btn-cancel"  id="staff-add-cancel">キャンセル</button>
   </div>
 </div>
 
@@ -630,6 +665,10 @@ function setupApp() {
     document.getElementById('notify-list-close').onclick     = () => document.getElementById('notify-list-modal').classList.remove('show');
     document.getElementById('cf-proxy-add').onclick          = openProxyPicker;
     document.getElementById('proxy-pick-close').onclick      = () => { document.getElementById('proxy-pick-modal').classList.remove('show'); if (confirmDayKey) openConfirmModal(confirmDayKey); };
+    // 新規スタッフ登録（SHIFT-018）：代理入力のスタッフ選択から開く
+    document.getElementById('staff-add-open').onclick        = openStaffAdd;
+    document.getElementById('staff-add-do').onclick          = submitStaffAdd;
+    document.getElementById('staff-add-cancel').onclick      = () => closeStaffAdd(true);
   }
 
   document.getElementById('apply-submit').onclick = submitApply;
@@ -1354,11 +1393,76 @@ async function openProxyPicker() {
       const row = document.createElement('button');
       row.className = 'cf-row';
       row.style.cssText = 'width:100%;text-align:left;background:#fff;border:1px solid #eee;border-radius:10px;margin-bottom:8px;min-height:48px;cursor:pointer';
-      row.innerHTML = `<div class="cf-info"><div class="cf-name">👤 ${s.name}</div></div><div class="cf-chip pend">選ぶ</div>`;
+      // hasLine が false ＝ LINE未連携（管理者が登録しただけのスタッフ）。代理入力はできるが確定通知は届かない。
+      const noLine = (s.hasLine === false)
+        ? '<div style="font-size:11px;color:#e67e22;margin-top:2px">LINE未連携（確定通知は届きません）</div>' : '';
+      row.innerHTML = `<div class="cf-info"><div class="cf-name">👤 ${s.name}</div>${noLine}</div><div class="cf-chip pend">選ぶ</div>`;
       row.onclick = () => startProxyAdd(s);
       body.appendChild(row);
     });
   } catch (e) { body.innerHTML = '<div class="empty-state">読み込みエラー</div>'; }
+}
+
+// ------------------------------------------------------------
+// 新規スタッフ登録（SHIFT-018 最小版・管理者のみ）
+// 代理入力のスタッフ選択モーダルから開く。氏名・所属店舗・雇用区分だけを送り、
+// GAS側 adminAddStaff がスタッフマスターへ1行だけ追加する。
+// 登録に成功したらスタッフ一覧を読み直す＝その場で代理申請の対象として選べる。
+// LINE招待・タイムカード・人件費への登録はこの画面では行わない。
+// ------------------------------------------------------------
+function openStaffAdd() {
+  document.getElementById('proxy-pick-modal').classList.remove('show');
+  const sel = document.getElementById('staff-add-store');
+  sel.innerHTML = '';
+  staffData.stores.forEach(st => {
+    const o = document.createElement('option');
+    o.value = st.id; o.textContent = st.name;
+    sel.appendChild(o);
+  });
+  if (confirmStore) sel.value = confirmStore.id;   // いま開いている店舗を初期選択
+  document.getElementById('staff-add-name').value = '';
+  document.getElementById('staff-add-emp').value  = 'アルバイト';
+  showStaffAddMsg('');
+  document.getElementById('staff-add-modal').classList.add('show');
+}
+
+function showStaffAddMsg(text, isError) {
+  const el = document.getElementById('staff-add-msg');
+  if (!text) { el.style.display = 'none'; el.textContent = ''; return; }
+  el.textContent  = text;
+  el.style.background = isError ? '#fff0f0' : '#f0fbf3';
+  el.style.color      = isError ? '#c0392b' : '#1e7e45';
+  el.style.border     = '1px solid ' + (isError ? '#ffd0d0' : '#bfe7cd');
+  el.style.display    = 'block';
+}
+
+function closeStaffAdd(backToPicker) {
+  document.getElementById('staff-add-modal').classList.remove('show');
+  if (backToPicker) openProxyPicker();   // モーダルは常に1枚（代理入力の導線へ戻す）
+}
+
+async function submitStaffAdd() {
+  const name    = document.getElementById('staff-add-name').value.trim();
+  const storeId = document.getElementById('staff-add-store').value;
+  const empType = document.getElementById('staff-add-emp').value;
+  if (!name)    { showStaffAddMsg('氏名を入力してください', true); return; }
+  if (!storeId) { showStaffAddMsg('所属店舗を選んでください', true); return; }
+  const storeName = (staffData.stores.find(s => s.id === storeId) || {}).name || storeId;
+  if (!confirm(`次の内容でスタッフを登録します。\n\n氏名：${name}\n所属店舗：${storeName}\n雇用区分：${empType}\n\nよろしいですか？`)) return;
+  const btn = document.getElementById('staff-add-do');
+  btn.disabled = true; const _l = btn.textContent; btn.textContent = '登録中...';
+  showStaffAddMsg('');
+  try {
+    const data = await gasGet({ action:'adminAddStaff', lineId, name, storeId, empType });
+    if (!data || !data.ok) { showStaffAddMsg((data && data.error) ? data.error : '登録できませんでした', true); return; }
+    document.getElementById('staff-add-modal').classList.remove('show');
+    await openProxyPicker();   // 一覧を再取得＝登録した人がその場で選べる
+    alert(`${data.name} さん（${data.staffId}）を登録しました。\n\nこのままシフトを代理で追加できます。`);
+  } catch (e) {
+    showStaffAddMsg('通信エラー: ' + e.message, true);
+  } finally {
+    btn.disabled = false; btn.textContent = _l;
+  }
 }
 
 // スタッフを選んだら既存の時間入力モーダルを開く（proxy専用の時間UIを作らない）
