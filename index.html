@@ -83,6 +83,17 @@ body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #33
 .day-status.open { color: #06c755; }
 .day-status.meet { color: #5b6ee1; }
 .days-mode { display: flex; gap: 8px; margin: 0 12px 10px; }
+/* 申請カテゴリ内のサブタブ（申請 / 修正）。UI統合(SHIFT-019)で追加。 */
+.subtabs { display: none; gap: 8px; margin: 0 12px 10px; }
+.subtabs.show { display: flex; }
+.subtab { flex: 1; padding: 9px 0; border-radius: 20px; border: 2px solid #ddd; background: white; font-size: 13px; font-weight: bold; cursor: pointer; }
+.subtab.active { background: #06c755; border-color: #06c755; color: white; }
+/* スタッフタブ（管理者） */
+.staff-row { display: flex; align-items: center; gap: 10px; background: white; border: 1px solid #eee; border-radius: 10px; padding: 11px 12px; margin: 0 12px 8px; }
+.staff-row .nm { font-weight: bold; font-size: 14px; }
+.staff-row .id { font-size: 11px; color: #999; }
+.staff-row .sp { flex: 1; }
+.staff-badge { font-size: 10px; font-weight: bold; padding: 2px 8px; border-radius: 10px; background: #fdebd0; color: #8a4b00; white-space: nowrap; }
 .dmode-btn { flex: 1; padding: 9px 0; border-radius: 20px; border: 2px solid #ddd; background: white; font-size: 13px; font-weight: bold; cursor: pointer; transition: all 0.2s; }
 .dmode-btn.active { background: #5b6ee1; border-color: #5b6ee1; color: white; }
 .dmode-btn:disabled { opacity: .4; cursor: not-allowed; }
@@ -233,6 +244,12 @@ button:disabled { opacity: .55; cursor: not-allowed; }
   </div>
 
   <!-- ① 申請タブ -->
+  <!-- 「申請」カテゴリ内のサブタブ。管理者・スタッフ共通で表示する（SHIFT-019）。 -->
+  <div class="subtabs" id="subtabs">
+    <button class="subtab active" id="sub-apply" onclick="switchTab('apply')">シフト申請</button>
+    <button class="subtab" id="sub-edit" onclick="switchTab('edit')">申請の修正</button>
+  </div>
+
   <div id="tab-apply">
     <div class="staff-card">
       <div class="staff-avatar">👤</div>
@@ -376,20 +393,29 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 </div>
 
 <!-- ボトムナビ -->
+<!-- ⑤ スタッフタブ（管理者） -->
+<div id="tab-staff" style="display:none">
+  <div style="margin:0 12px 10px">
+    <button class="btn-submit" id="staff-tab-add" style="margin:0">＋ 新規スタッフ登録</button>
+  </div>
+  <div id="staff-tab-list"><div class="empty-state">読み込み中...</div></div>
+</div>
+
+<!-- 下部ナビは4分類（SHIFT-019）。スタッフは「申請」のみ、管理者は4つすべて。
+     内部のタブIDは既存のまま（apply/edit/confirm/days）＝既存処理を書き換えないため。
+     「修正」はナビから外し、申請カテゴリ内のサブタブへ移動した。 -->
 <nav class="bottom-nav" id="bottom-nav" style="display:none">
   <button class="nav-btn active" id="nav-apply" onclick="switchTab('apply')">
     <span class="icon">📅</span>申請
   </button>
-  <button class="nav-btn" id="nav-edit" onclick="switchTab('edit')">
-    <span class="icon">✏️</span>修正
-  </button>
-  <!-- 管理者の2タブ（SHIFT-017）。スタッフには出さない。
-       内部のタブID(confirm/days)は既存のまま＝表示名だけ「シフト管理」「営業日設定」に統合。 -->
   <button class="nav-btn" id="nav-shift" onclick="switchTab('confirm')" style="display:none">
     <span class="icon">🗂</span>シフト管理
   </button>
   <button class="nav-btn" id="nav-days" onclick="switchTab('days')" style="display:none">
-    <span class="icon">🗓</span>営業日設定
+    <span class="icon">🗓</span>営業設定
+  </button>
+  <button class="nav-btn" id="nav-staff" onclick="switchTab('staff')" style="display:none">
+    <span class="icon">🧑</span>スタッフ
   </button>
 </nav>
 
@@ -651,13 +677,15 @@ function setupApp() {
   document.getElementById('bottom-nav').style.display = 'flex';
   document.getElementById('staff-name-lbl').textContent   = staffData.name + 'さん';
   document.getElementById('staff-stores-lbl').textContent = '担当: ' + staffData.stores.map(s=>s.name).join(' / ');
-  // SHIFT-017：管理者は「シフト管理」「営業日設定」の2タブのみ。スタッフは「申請」「修正」のみ。
-  // 管理者が自分のシフトを入れる場合はシフト管理の代理入力で自分を選ぶ（CEO確定仕様）。
+  // SHIFT-019：画面はこのindex.html 1本に統一。ナビは4分類。
+  //   申請（申請＋修正のサブタブ）／シフト管理／営業設定／スタッフ
+  // スタッフは「申請」のみ。管理者は4つすべて＝管理者も自分の申請・修正ができる
+  // （SHIFT-017で管理者から申請・修正を隠していた処理は廃止した）。
   if (staffData.isAdmin) {
     document.getElementById('nav-shift').style.display = 'flex';
     document.getElementById('nav-days').style.display  = 'flex';
-    document.getElementById('nav-apply').style.display = 'none';   // 管理者には申請タブを出さない
-    document.getElementById('nav-edit').style.display  = 'none';   // 修正はシフト管理へ統合
+    document.getElementById('nav-staff').style.display = 'flex';
+    document.getElementById('staff-tab-add').onclick          = openStaffAdd;
     document.getElementById('confirm-modal-do').onclick      = doConfirm;
     document.getElementById('confirm-modal-decline').onclick = doDecline;
     document.getElementById('confirm-modal-cancel').onclick  = () => document.getElementById('confirm-modal').classList.remove('show');
@@ -682,18 +710,19 @@ function setupApp() {
     document.getElementById('done-view').style.display = 'none';
     document.getElementById('app').style.display = 'block';
     document.getElementById('bottom-nav').style.display = 'flex';
-    // 管理者は代理登録後もシフト管理へ戻る（代理タブは廃止＝SHIFT-017）
-    if (staffData.isAdmin) { loadConfirmData(); switchTab('confirm'); }
+    // 代理登録の直後だけシフト管理へ戻す。管理者が「自分の申請」をした場合は申請画面へ戻す
+    // （SHIFT-019：管理者も申請できるようになったため、isAdminだけで分岐しない）。
+    if (pendingMode === 'proxyAdd') { loadConfirmData(); switchTab('confirm'); }
     else if (pendingMode === 'edit') { loadEditShifts(); switchTab('edit'); }
     else switchTab('apply');
   };
 
   // タブ初期化はハンドラ登録の後（初期化内で描画が走るため）
+  initApplyTab();          // 申請タブは管理者・スタッフ共通で使うので必ず初期化する
   if (staffData.isAdmin) {
     restoreAdminState();   // 店舗・期間・表示状態を復元（localStorage・個人情報は保存しない）
-    switchTab('confirm');  // 起動タブ＝シフト管理（switchTab内で initConfirmTab が走る）
+    switchTab('confirm');  // 管理者の起動タブ＝シフト管理（一般画面には落とさない）
   } else {
-    initApplyTab();
     switchTab('apply');
   }
 }
@@ -701,20 +730,66 @@ function setupApp() {
 // ============================================================
 // タブ切り替え
 // ============================================================
+// タブID → 下部ナビ4分類のどれに属するか（SHIFT-019）
+const NAV_OF = { apply:'nav-apply', edit:'nav-apply', confirm:'nav-shift', days:'nav-days', staff:'nav-staff' };
+// 管理者専用タブ。スタッフが辿り着けないよう二重防御する（ナビ非表示＋ここで遮断）。
+const ADMIN_TABS = ['confirm','days','staff'];
+
 function switchTab(tab) {
-  ['apply','edit','days','confirm'].forEach(t => {
+  if (ADMIN_TABS.includes(tab) && !(staffData && staffData.isAdmin)) return;   // 権限のないタブへは遷移しない
+  // タブを移る時は開いているモーダルを必ず閉じる。閉じないと、例えばシフト管理の日付モーダルを
+  // 開いたままスタッフタブへ移動でき、別タブの上に前のタブのモーダルが残ってしまう。
+  document.querySelectorAll('.modal-overlay.show').forEach(m => m.classList.remove('show'));
+  ['apply','edit','days','confirm','staff'].forEach(t => {
     document.getElementById('tab-'+t).style.display = t===tab ? '' : 'none';
-    const nav = document.getElementById('nav-'+t);
-    if (nav) nav.classList.toggle('active', t===tab);
   });
-  if (tab === 'edit') loadEditShifts();
-  if (tab === 'days') initDaysTab();
-  if (tab === 'confirm') initConfirmTab();   // ＝シフト管理（修正・代理・確定を統合）
-  // 'proxy' は SHIFT-017 で廃止（代理入力はシフト管理の統合モーダルへ）。
-  // 配列には残して常に display:none にし、旧DOMが表に出ないようにする。
+  // ナビは4分類。申請・修正はどちらも「申請」を点灯させる。
+  Object.values(NAV_OF).forEach(id => {
+    const nav = document.getElementById(id);
+    if (nav) nav.classList.remove('active');
+  });
+  const navEl = document.getElementById(NAV_OF[tab]);
+  if (navEl) navEl.classList.add('active');
+  // 申請カテゴリのときだけサブタブ（シフト申請／申請の修正）を出す
+  const isApplyCat = (tab === 'apply' || tab === 'edit');
+  document.getElementById('subtabs').classList.toggle('show', isApplyCat);
+  document.getElementById('sub-apply').classList.toggle('active', tab === 'apply');
+  document.getElementById('sub-edit').classList.toggle('active', tab === 'edit');
+
+  if (tab === 'edit')    loadEditShifts();
+  if (tab === 'days')    initDaysTab();
+  if (tab === 'confirm') initConfirmTab();   // ＝シフト管理（確認・確定・代理・通知を統合）
+  if (tab === 'staff')   loadStaffTab();
   document.getElementById('header-title').textContent =
-    tab==='apply' ? '📅 シフト申請' : tab==='edit' ? '✏️ シフト修正' : tab==='days' ? '🗓 営業日設定' : '🗂 シフト管理';
+    tab==='apply' ? '📅 シフト申請' : tab==='edit' ? '✏️ シフト修正' :
+    tab==='days'  ? '🗓 営業設定'   : tab==='staff' ? '🧑 スタッフ' : '🗂 シフト管理';
   if (staffData.isAdmin && (tab === 'confirm' || tab === 'days')) saveAdminState({ view: tab });
+}
+
+// ============================================================
+// ⑤ スタッフタブ（管理者）— 一覧表示と新規登録への入口
+// 一覧は既存の getStaffList をそのまま使う（新APIなし）。
+// 登録処理は openStaffAdd / submitStaffAdd を代理入力側と共用する（実装は1つだけ）。
+// ============================================================
+async function loadStaffTab() {
+  const el = document.getElementById('staff-tab-list');
+  el.innerHTML = '<div class="empty-state">読み込み中...</div>';
+  try {
+    const data = await gasGet({ action:'getStaffList', lineId });
+    if (!data.ok) { el.innerHTML = `<div class="empty-state">${data.error || 'エラー'}</div>`; return; }
+    const all = data.staff || [];
+    const sid = (confirmStore && confirmStore.id) || staffData.stores[0].id;
+    const name = (staffData.stores.find(s => s.id === sid) || {}).name || '';
+    const mine = all.filter(s => !s.stores || !s.stores.length || s.stores.some(x => (x.id||x) === sid));
+    el.innerHTML = `<div style="margin:0 12px 8px;font-size:12px;color:#888">
+      ${name}のスタッフ ${mine.length}名（在籍 全${all.length}名）</div>`;
+    mine.forEach(s => {
+      el.insertAdjacentHTML('beforeend', `<div class="staff-row">
+        <span><span class="nm">👤 ${s.name}</span><br><span class="id">${s.id}</span></span>
+        <span class="sp"></span>
+        ${s.hasLine === false ? '<span class="staff-badge">LINE未連携</span>' : ''}</div>`);
+    });
+  } catch (e) { el.innerHTML = '<div class="empty-state">読み込みエラー</div>'; }
 }
 
 // ============================================================
@@ -1410,7 +1485,12 @@ async function openProxyPicker() {
 // 登録に成功したらスタッフ一覧を読み直す＝その場で代理申請の対象として選べる。
 // LINE招待・タイムカード・人件費への登録はこの画面では行わない。
 // ------------------------------------------------------------
+// 登録モーダルをどこから開いたか。'proxy'=代理入力の選択画面 / 'staff'=スタッフタブ。
+// 閉じた後・登録後の戻り先を決めるためだけに使う（処理本体は共通・1実装）。
+let staffAddFrom = 'proxy';
+
 function openStaffAdd() {
+  staffAddFrom = document.getElementById('proxy-pick-modal').classList.contains('show') ? 'proxy' : 'staff';
   document.getElementById('proxy-pick-modal').classList.remove('show');
   const sel = document.getElementById('staff-add-store');
   sel.innerHTML = '';
@@ -1436,9 +1516,10 @@ function showStaffAddMsg(text, isError) {
   el.style.display    = 'block';
 }
 
-function closeStaffAdd(backToPicker) {
+function closeStaffAdd(back) {
   document.getElementById('staff-add-modal').classList.remove('show');
-  if (backToPicker) openProxyPicker();   // モーダルは常に1枚（代理入力の導線へ戻す）
+  // モーダルは常に1枚。開いた場所へ戻す（代理入力なら選択画面／スタッフタブなら一覧）。
+  if (back && staffAddFrom === 'proxy') openProxyPicker();
 }
 
 async function submitStaffAdd() {
@@ -1456,8 +1537,11 @@ async function submitStaffAdd() {
     const data = await gasGet({ action:'adminAddStaff', lineId, name, storeId, empType });
     if (!data || !data.ok) { showStaffAddMsg((data && data.error) ? data.error : '登録できませんでした', true); return; }
     document.getElementById('staff-add-modal').classList.remove('show');
-    await openProxyPicker();   // 一覧を再取得＝登録した人がその場で選べる
-    alert(`${data.name} さん（${data.staffId}）を登録しました。\n\nこのままシフトを代理で追加できます。`);
+    // 開いた場所に応じて再読込。どちらも一覧が最新化され、登録した人がすぐ対象になる。
+    if (staffAddFrom === 'proxy') await openProxyPicker();
+    else await loadStaffTab();
+    alert(`${data.name} さん（${data.staffId}）を登録しました。\n\n` +
+          (staffAddFrom === 'proxy' ? 'このままシフトを代理で追加できます。' : 'シフト管理の代理入力から選べます。'));
   } catch (e) {
     showStaffAddMsg('通信エラー: ' + e.message, true);
   } finally {
