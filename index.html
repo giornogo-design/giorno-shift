@@ -136,7 +136,7 @@ body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #33
 .btn-edit { padding: 6px 14px; border: 2px solid #06c755; background: white; color: #06c755; border-radius: 20px; font-size: 13px; cursor: pointer; }
 .btn-delete { padding: 6px 14px; border: 2px solid #e53e3e; background: white; color: #e53e3e; border-radius: 20px; font-size: 13px; cursor: pointer; }
 
-/* 代理申請タブ */
+/* 管理者シフト登録 */
 .staff-picker { margin: 0 12px 12px; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
 .staff-pick-item { padding: 14px 16px; border-bottom: 1px solid #f5f5f5; cursor: pointer; display: flex; align-items: center; justify-content: space-between; }
 .staff-pick-item:last-child { border-bottom: none; }
@@ -144,6 +144,27 @@ body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #33
 .staff-pick-name { font-weight: bold; font-size: 15px; }
 .staff-pick-stores { font-size: 12px; color: #888; }
 .staff-pick-arrow { color: #ccc; font-size: 18px; }
+.admin-entry-launch { margin: 0 12px 10px; }
+.admin-entry-field { margin-bottom: 14px; }
+.admin-entry-field label { display:block; font-size:12px; font-weight:bold; color:#666; margin-bottom:6px; }
+.admin-entry-control { width:100%; padding:10px 12px; border:1px solid #d9dde3; border-radius:9px; background:#fff; font-size:15px; }
+.admin-staff-results { max-height:180px; overflow:auto; border:1px solid #e5e7eb; border-radius:10px; }
+.admin-staff-option { display:flex; width:100%; gap:8px; align-items:center; padding:10px 12px; border:0; border-bottom:1px solid #eee; background:#fff; text-align:left; cursor:pointer; }
+.admin-staff-option:last-child { border-bottom:0; }
+.admin-staff-option.selected { background:#e8faf0; box-shadow:inset 3px 0 #06c755; }
+.admin-staff-meta { color:#777; font-size:11px; margin-top:2px; }
+.admin-entry-calendar .cal-cell.selected { background:#d7f5e3; box-shadow:inset 0 0 0 2px #06c755; }
+.admin-entry-calendar .cal-cell.existing { background:#eef5ff; }
+.admin-entry-row { padding:12px; border-bottom:1px solid #eee; }
+.admin-entry-row:last-child { border-bottom:0; }
+.admin-entry-row-head { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+.admin-entry-row-head strong { flex:1; }
+.admin-entry-times { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.admin-entry-times input { width:100%; padding:9px; border:1px solid #d9dde3; border-radius:8px; font-size:14px; }
+.admin-entry-error { color:#c53030; font-size:12px; margin-top:6px; white-space:pre-wrap; }
+.admin-entry-status { display:none; margin:0 0 12px; padding:10px 12px; border-radius:9px; font-size:13px; white-space:pre-wrap; }
+.origin-chip { display:inline-block; margin-left:5px; padding:2px 7px; border-radius:9px; font-size:9px; background:#ede9fe; color:#5b21b6; }
+.origin-chip.self { background:#eef2f7; color:#555; }
 
 /* 月セレクタ */
 .month-select-wrap { margin: 12px; display: flex; align-items: center; justify-content: space-between; background: white; border-radius: 12px; padding: 12px 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
@@ -361,6 +382,9 @@ button:disabled { opacity: .55; cursor: not-allowed; }
   <!-- ⑤ 確定タブ（管理者） -->
   <div id="tab-confirm" style="display:none">
     <div class="store-tabs" id="store-tabs-confirm"></div>
+    <div class="admin-entry-launch">
+      <button class="btn-submit" id="admin-shift-entry-open" type="button">＋ スタッフのシフト登録</button>
+    </div>
     <!-- SHIFT-017：未処理件数（申請中）。確定未通知バーと並べて上部に固定表示する。 -->
     <div id="confirm-pending-bar" style="display:none;margin:0 12px 10px;padding:12px 14px;background:#fff3e0;border:1px solid #e67e22;border-radius:12px;align-items:center;gap:10px">
       <div style="flex:1;font-size:13px;color:#a05a00;line-height:1.5"><b id="confirm-pending-count">0</b>件の申請が未処理です（日付をタップして確定・見送り）</div>
@@ -426,6 +450,53 @@ button:disabled { opacity: .55; cursor: not-allowed; }
   </button>
 </nav>
 
+<!-- SHIFT-021 管理者専用シフト登録。空日から独立して開ける。 -->
+<div class="modal-overlay" id="admin-entry-modal">
+  <div class="modal" style="max-width:760px">
+    <div class="modal-title">スタッフのシフト登録</div>
+    <div class="modal-sub">管理者権限で申請済みシフトを登録します。確定・LINE通知は行いません。</div>
+    <div id="admin-entry-status" class="admin-entry-status" role="status" aria-live="polite"></div>
+    <div class="admin-entry-field">
+      <label for="admin-entry-store">1. 店舗</label>
+      <select id="admin-entry-store" class="admin-entry-control"></select>
+    </div>
+    <div class="admin-entry-field">
+      <label for="admin-entry-search">2. スタッフ検索（氏名またはスタッフID）</label>
+      <input id="admin-entry-search" class="admin-entry-control" type="search" autocomplete="off" placeholder="名前の一部を入力">
+      <div id="admin-entry-staff-results" class="admin-staff-results"><div class="empty-state">店舗を選択してください</div></div>
+      <div id="admin-entry-selected-staff" class="admin-entry-error"></div>
+    </div>
+    <div class="admin-entry-field admin-entry-calendar">
+      <label>3. 年月・日付（複数選択可）</label>
+      <div class="cal-wrap" style="margin:0">
+        <div class="cal-header">
+          <button class="cal-nav" id="admin-entry-prev" type="button">‹</button>
+          <div class="month-lbl" id="admin-entry-month"></div>
+          <button class="cal-nav" id="admin-entry-next" type="button">›</button>
+        </div>
+        <div class="cal-grid" id="admin-entry-grid">
+          <div class="cal-dow">日</div><div class="cal-dow">月</div><div class="cal-dow">火</div>
+          <div class="cal-dow">水</div><div class="cal-dow">木</div><div class="cal-dow">金</div><div class="cal-dow">土</div>
+        </div>
+        <div class="legend">
+          <span><span class="dot" style="background:#d7f5e3;border:1px solid #06c755"></span>今回登録</span>
+          <span><span class="dot" style="background:#eef5ff;border:1px solid #3182ce"></span>既存シフト</span>
+        </div>
+      </div>
+    </div>
+    <div class="selected-list" style="margin:0 0 12px">
+      <div class="section-title">4. 登録内容</div>
+      <div id="admin-entry-selected"><div class="empty-state">スタッフと日付を選択してください</div></div>
+    </div>
+    <div class="selected-list" style="margin:0 0 12px">
+      <div class="section-title">既存シフト</div>
+      <div id="admin-entry-existing"><div class="empty-state">スタッフを選択すると表示します</div></div>
+    </div>
+    <button class="btn-confirm" id="admin-entry-submit" type="button" disabled>内容を確認して登録</button>
+    <button class="btn-cancel" id="admin-entry-close" type="button">閉じる</button>
+  </div>
+</div>
+
 <!-- 時間入力モーダル -->
 <div class="modal-overlay" id="modal">
   <div class="modal">
@@ -459,7 +530,7 @@ button:disabled { opacity: .55; cursor: not-allowed; }
     <div class="cf-tools">
       <button class="cf-tool-btn" onclick="cfSelectAll(true)">申請中をすべて選択</button>
       <button class="cf-tool-btn" onclick="cfSelectAll(false)">選択を解除</button>
-      <button class="cf-tool-btn" id="cf-proxy-add">＋ 代理で追加</button>
+      <button class="cf-tool-btn" id="cf-proxy-add">＋ スタッフのシフト登録</button>
       <button class="cf-tool-btn" id="cf-revert-all" onclick="revertAllOfDay()" style="display:none"></button>
     </div>
     <div id="confirm-modal-list"></div>
@@ -472,10 +543,10 @@ button:disabled { opacity: .55; cursor: not-allowed; }
   </div>
 </div>
 
-<!-- 代理入力：スタッフ選択モーダル（管理者・SHIFT-017） -->
+<!-- 旧入力画面（後方互換用。SHIFT-021の入口からは使用しない） -->
 <div class="modal-overlay" id="proxy-pick-modal">
   <div class="modal">
-    <div class="modal-title">代理で追加するスタッフ</div>
+    <div class="modal-title">登録するスタッフ</div>
     <div class="modal-sub" id="proxy-pick-sub"></div>
     <div id="proxy-pick-body"><div class="empty-state">読み込み中...</div></div>
     <button class="cf-tool-btn" id="staff-add-open" style="width:100%;margin-top:4px">＋ 新規スタッフ登録</button>
@@ -488,7 +559,7 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 <div class="modal-overlay" id="staff-add-modal">
   <div class="modal">
     <div class="modal-title">新規スタッフ登録</div>
-    <div class="modal-sub">登録するとすぐに代理でシフトを入れられます</div>
+    <div class="modal-sub">登録すると管理者シフト登録で選択できます</div>
     <div class="time-section">
       <div class="time-label">▶ 氏名</div>
       <input type="text" id="staff-add-name" maxlength="20" placeholder="例：山田花子"
@@ -608,6 +679,10 @@ function dayPartFor(storeId, dow) { const c = STORE_DAY_PART[storeId]; return (c
 // 状態
 // ============================================================
 let lineId = null, staffData = null;
+let adminShiftToken = null, adminShiftSessionPromise = null;
+let adminEntryStore = null, adminEntryStaff = null;
+let adminEntryYear = new Date().getFullYear(), adminEntryMonth = new Date().getMonth()+1;
+let adminEntryStaffList = [], adminEntrySelected = {}, adminEntryExisting = [], adminEntryBusy = false;
 let applyStore = null, applyMonth = new Date().getMonth()+1, applyYear = new Date().getFullYear();
 let applySelected = {}, applyExisting = {}, applyShortage = {};
 let multiMode = false, multiPicked = {};                 // まとめて選択モード
@@ -643,6 +718,17 @@ async function gasGet(params) {
   } finally {
     setNet(false);
   }
+}
+
+async function gasPost(params) {
+  setNet(true);
+  try {
+    const body = new URLSearchParams(Object.assign({ transport:'adminShift' }, params));
+    const res = await fetch(GAS_URL, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'}, body:body.toString() });
+    if (!res.ok) throw new Error(`通信エラー（HTTP ${res.status}）`);
+    const text = await res.text();
+    try { return JSON.parse(text); } catch(e) { throw new Error('GAS応答エラー: ' + text.slice(0,100)); }
+  } finally { setNet(false); }
 }
 
 // ============================================================
@@ -700,7 +786,14 @@ function setupApp() {
     document.getElementById('confirm-modal-cancel').onclick  = () => document.getElementById('confirm-modal').classList.remove('show');
     document.getElementById('confirm-notify-btn').onclick    = openNotifyList;
     document.getElementById('notify-list-close').onclick     = () => document.getElementById('notify-list-modal').classList.remove('show');
-    document.getElementById('cf-proxy-add').onclick          = openProxyPicker;
+    document.getElementById('admin-shift-entry-open').onclick = () => openAdminShiftEntry();
+    document.getElementById('cf-proxy-add').onclick          = () => openAdminShiftEntry(confirmDayKey);
+    document.getElementById('admin-entry-close').onclick     = closeAdminShiftEntry;
+    document.getElementById('admin-entry-store').onchange   = onAdminEntryStoreChanged;
+    document.getElementById('admin-entry-search').oninput   = renderAdminEntryStaff;
+    document.getElementById('admin-entry-prev').onclick     = () => moveAdminEntryMonth(-1);
+    document.getElementById('admin-entry-next').onclick     = () => moveAdminEntryMonth(1);
+    document.getElementById('admin-entry-submit').onclick   = submitAdminShiftEntries;
     document.getElementById('proxy-pick-close').onclick      = () => { document.getElementById('proxy-pick-modal').classList.remove('show'); if (confirmDayKey) openConfirmModal(confirmDayKey); };
     // 新規スタッフ登録（SHIFT-018）：代理入力のスタッフ選択から開く
     document.getElementById('staff-add-open').onclick        = openStaffAdd;
@@ -799,6 +892,266 @@ async function loadStaffTab() {
         ${s.hasLine === false ? '<span class="staff-badge">LINE未連携</span>' : ''}</div>`);
     });
   } catch (e) { el.innerHTML = '<div class="empty-state">読み込みエラー</div>'; }
+}
+
+// ============================================================
+// SHIFT-021 管理者専用「スタッフのシフト登録」
+// ============================================================
+
+function adminRequestId() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID().replace(/-/g,'');
+  return Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+}
+
+async function ensureAdminShiftSession(force) {
+  if (force) adminShiftToken = null;
+  if (adminShiftToken) return adminShiftToken;
+  if (adminShiftSessionPromise) return adminShiftSessionPromise;
+  adminShiftSessionPromise = (async () => {
+    const idToken = (typeof liff.getIDToken === 'function') ? liff.getIDToken() : null;
+    const accessToken = (typeof liff.getAccessToken === 'function') ? liff.getAccessToken() : null;
+    const credential = idToken || accessToken;
+    if (!credential) throw new Error('LINEの管理者認証情報を取得できません。画面を開き直してください。');
+    const data = await gasPost({ action:'adminCreateShiftSession', credential,
+      credentialType:idToken ? 'id_token' : 'access_token' });
+    if (!data || !data.ok || !data.adminToken) throw new Error((data && data.error) || '管理者認証に失敗しました。');
+    adminShiftToken = data.adminToken;
+    return adminShiftToken;
+  })();
+  try { return await adminShiftSessionPromise; }
+  finally { adminShiftSessionPromise = null; }
+}
+
+async function adminShiftGet(params, retry) {
+  const token = await ensureAdminShiftSession(false);
+  const data = await gasPost(Object.assign({}, params, { adminToken:token }));
+  if (!data || !data.ok) {
+    const msg = (data && data.error) || '通信に失敗しました。';
+    if (!retry && msg.indexOf('セッション') >= 0) {
+      await ensureAdminShiftSession(true);
+      return adminShiftGet(params, true);
+    }
+  }
+  return data;
+}
+
+function showAdminEntryStatus(message, isError) {
+  const el = document.getElementById('admin-entry-status');
+  el.style.display = message ? 'block' : 'none';
+  el.textContent = message || '';
+  el.style.background = isError ? '#fff0f0' : '#eef8f1';
+  el.style.color = isError ? '#c53030' : '#176b37';
+  el.style.border = '1px solid ' + (isError ? '#ffd0d0' : '#bfe7cd');
+}
+
+async function openAdminShiftEntry(prefillDayKey) {
+  if (!(staffData && staffData.isAdmin)) return;
+  document.querySelectorAll('.modal-overlay.show').forEach(m => m.classList.remove('show'));
+  const select = document.getElementById('admin-entry-store');
+  select.innerHTML = '';
+  staffData.stores.forEach(store => {
+    const option=document.createElement('option'); option.value=store.id; option.textContent=store.name; select.appendChild(option);
+  });
+  adminEntryStore = (confirmStore && staffData.stores.some(s=>s.id===confirmStore.id)) ? confirmStore : staffData.stores[0];
+  select.value = adminEntryStore.id;
+  adminEntryYear = confirmYear || new Date().getFullYear();
+  adminEntryMonth = confirmMonth || new Date().getMonth()+1;
+  adminEntryStaff = null; adminEntrySelected = {}; adminEntryExisting = [];
+  document.getElementById('admin-entry-search').value = '';
+  document.getElementById('admin-entry-selected-staff').textContent = 'スタッフを選択してください。';
+  showAdminEntryStatus('管理者権限を確認しています…', false);
+  document.getElementById('admin-entry-modal').classList.add('show');
+  renderAdminEntryCalendar(); renderAdminEntrySelected(); renderAdminEntryExisting();
+  try {
+    await ensureAdminShiftSession(false);
+    showAdminEntryStatus('', false);
+    await loadAdminEntryStaff();
+    if (prefillDayKey) {
+      const parts=prefillDayKey.split('/').map(Number);
+      if (parts.length===2) document.getElementById('admin-entry-selected-staff').dataset.prefillDay=String(parts[1]);
+    }
+  } catch(e) { showAdminEntryStatus(e.message, true); }
+}
+
+function closeAdminShiftEntry() {
+  if (adminEntryBusy) return;
+  if (Object.keys(adminEntrySelected).length && !confirm('保存していない登録内容があります。破棄して閉じますか？')) return;
+  document.getElementById('admin-entry-modal').classList.remove('show');
+}
+
+async function onAdminEntryStoreChanged() {
+  const id=document.getElementById('admin-entry-store').value;
+  adminEntryStore=staffData.stores.find(s=>s.id===id) || null;
+  adminEntryStaff=null; adminEntrySelected={}; adminEntryExisting=[];
+  document.getElementById('admin-entry-search').value='';
+  document.getElementById('admin-entry-selected-staff').textContent='スタッフを選択してください。';
+  renderAdminEntryCalendar(); renderAdminEntrySelected(); renderAdminEntryExisting();
+  await loadAdminEntryStaff();
+}
+
+async function loadAdminEntryStaff() {
+  const body=document.getElementById('admin-entry-staff-results');
+  if(!adminEntryStore){body.innerHTML='<div class="empty-state">店舗を選択してください</div>';return;}
+  body.innerHTML='<div class="empty-state">在籍スタッフを読み込み中...</div>';
+  try {
+    const data=await adminShiftGet({action:'adminGetStaffForShiftEntry',storeId:adminEntryStore.id,query:''});
+    if(!data || !data.ok) throw new Error((data&&data.error)||'スタッフ一覧を取得できません。');
+    adminEntryStaffList=data.staff||[]; renderAdminEntryStaff();
+  } catch(e){ body.innerHTML=''; showAdminEntryStatus(e.message,true); }
+}
+
+function renderAdminEntryStaff() {
+  const body=document.getElementById('admin-entry-staff-results');
+  const q=document.getElementById('admin-entry-search').value.replace(/\s/g,'').toLowerCase();
+  const list=adminEntryStaffList.filter(s=>!q || String(s.name).replace(/\s/g,'').toLowerCase().includes(q) || String(s.id).toLowerCase().includes(q));
+  body.innerHTML='';
+  if(!list.length){body.innerHTML='<div class="empty-state">該当する在籍スタッフがいません</div>';return;}
+  list.forEach(s=>{
+    const b=document.createElement('button'); b.type='button'; b.className='admin-staff-option'+(adminEntryStaff&&adminEntryStaff.id===s.id?' selected':'');
+    const info=document.createElement('span'); info.style.flex='1';
+    const name=document.createElement('strong'); name.textContent=s.name+'（'+s.id+'）'; info.appendChild(name);
+    const meta=document.createElement('div'); meta.className='admin-staff-meta';
+    meta.textContent='所属: '+((s.stores||[]).map(x=>x.name||x.id).join(' / ')||'全店舗')+(s.hasLine===false?'・LINE未連携':''); info.appendChild(meta);
+    b.appendChild(info); b.onclick=()=>selectAdminEntryStaff(s); body.appendChild(b);
+  });
+}
+
+async function selectAdminEntryStaff(staff) {
+  adminEntryStaff=staff; adminEntrySelected={};
+  document.getElementById('admin-entry-selected-staff').textContent='選択中: '+staff.name+'（'+staff.id+'）';
+  renderAdminEntryStaff(); renderAdminEntrySelected();
+  await loadAdminEntryExisting();
+  const holder=document.getElementById('admin-entry-selected-staff');
+  const prefill=parseInt(holder.dataset.prefillDay||'',10); delete holder.dataset.prefillDay;
+  if(prefill) toggleAdminEntryDate(prefill);
+}
+
+async function loadAdminEntryExisting() {
+  adminEntryExisting=[]; renderAdminEntryCalendar(); renderAdminEntryExisting();
+  if(!adminEntryStaff || !adminEntryStore) return;
+  try {
+    const data=await adminShiftGet({action:'adminGetShiftEntries',targetStaffId:adminEntryStaff.id,storeId:adminEntryStore.id,year:adminEntryYear,month:adminEntryMonth});
+    if(!data||!data.ok) throw new Error((data&&data.error)||'既存シフトを取得できません。');
+    adminEntryExisting=data.shifts||[]; renderAdminEntryCalendar(); renderAdminEntryExisting();
+  } catch(e){showAdminEntryStatus(e.message,true);}
+}
+
+async function moveAdminEntryMonth(delta) {
+  if(adminEntryBusy)return;
+  adminEntryMonth+=delta;
+  if(adminEntryMonth<1){adminEntryMonth=12;adminEntryYear--;}
+  if(adminEntryMonth>12){adminEntryMonth=1;adminEntryYear++;}
+  adminEntrySelected={}; renderAdminEntrySelected();
+  await loadAdminEntryExisting();
+}
+
+function adminEntryDateKey(year,month,day){return year+'-'+String(month).padStart(2,'0')+'-'+String(day).padStart(2,'0');}
+
+function renderAdminEntryCalendar() {
+  document.getElementById('admin-entry-month').textContent=adminEntryYear+'年'+adminEntryMonth+'月';
+  const grid=document.getElementById('admin-entry-grid'); while(grid.children.length>7)grid.removeChild(grid.lastChild);
+  const first=new Date(adminEntryYear,adminEntryMonth-1,1).getDay(),last=new Date(adminEntryYear,adminEntryMonth,0).getDate();
+  const today=new Date();today.setHours(0,0,0,0);const max=new Date(today.getTime()+365*24*60*60*1000);
+  for(let i=0;i<first;i++){const c=document.createElement('div');c.className='cal-cell empty';grid.appendChild(c);}
+  for(let d=1;d<=last;d++){
+    const date=new Date(adminEntryYear,adminEntryMonth-1,d),key=adminEntryDateKey(adminEntryYear,adminEntryMonth,d);
+    const existing=adminEntryExisting.filter(s=>s.day===d).length;
+    const disabled=date<today||date>max||!adminEntryStaff||adminEntryBusy;
+    const c=document.createElement('div');c.className='cal-cell'+(adminEntrySelected[key]?' selected':'')+(existing?' existing':'')+(disabled?' oor':'');
+    const n=document.createElement('div');n.className='day-num';n.textContent=d;c.appendChild(n);
+    if(existing){const b=document.createElement('div');b.className='shift-exist-badge';b.textContent=existing+'件';c.appendChild(b);}
+    if(adminEntrySelected[key]){const b=document.createElement('div');b.className='shift-badge';b.textContent='追加';c.appendChild(b);}
+    if(!disabled)c.onclick=()=>toggleAdminEntryDate(d);grid.appendChild(c);
+  }
+}
+
+function toggleAdminEntryDate(day) {
+  if(!adminEntryStaff){showAdminEntryStatus('スタッフを選択してください。',true);return;}
+  const key=adminEntryDateKey(adminEntryYear,adminEntryMonth,day);
+  if(adminEntrySelected[key]) delete adminEntrySelected[key];
+  else adminEntrySelected[key]={year:adminEntryYear,month:adminEntryMonth,day:day,start:startPresetsFor(adminEntryStore.id)[0],end:STORE_LAST[adminEntryStore.id]};
+  showAdminEntryStatus('',false);renderAdminEntryCalendar();renderAdminEntrySelected();
+}
+
+function renderAdminEntrySelected() {
+  const body=document.getElementById('admin-entry-selected'),items=Object.entries(adminEntrySelected).sort((a,b)=>a[0].localeCompare(b[0]));
+  body.innerHTML='';
+  if(!items.length){body.innerHTML='<div class="empty-state">スタッフと日付を選択してください</div>';document.getElementById('admin-entry-submit').disabled=true;return;}
+  items.forEach(([key,s])=>{
+    const row=document.createElement('div');row.className='admin-entry-row';
+    const head=document.createElement('div');head.className='admin-entry-row-head';const strong=document.createElement('strong');strong.textContent=key;head.appendChild(strong);
+    const del=document.createElement('button');del.type='button';del.className='btn-del-sel';del.textContent='×';del.onclick=()=>{delete adminEntrySelected[key];renderAdminEntryCalendar();renderAdminEntrySelected();};head.appendChild(del);row.appendChild(head);
+    const times=document.createElement('div');times.className='admin-entry-times';
+    [['開始',s.start,'start'],['終了',s.end,'end']].forEach(v=>{const wrap=document.createElement('label');wrap.textContent=v[0];const input=document.createElement('input');input.type='text';input.inputMode='numeric';input.value=v[1];input.placeholder=v[2]==='start'?'19:00':'28:00 / 状況次第';input.oninput=()=>{s[v[2]]=input.value.trim();delete s.error;renderAdminEntrySubmitState();};wrap.appendChild(input);times.appendChild(wrap);});
+    row.appendChild(times);const err=document.createElement('div');err.className='admin-entry-error';err.textContent=s.error||'';row.appendChild(err);body.appendChild(row);
+  });
+  renderAdminEntrySubmitState();
+}
+
+function renderAdminEntrySubmitState(){document.getElementById('admin-entry-submit').disabled=adminEntryBusy||!adminEntryStaff||!Object.keys(adminEntrySelected).length;}
+
+function renderAdminEntryExisting() {
+  const body=document.getElementById('admin-entry-existing');body.innerHTML='';
+  if(!adminEntryStaff){body.innerHTML='<div class="empty-state">スタッフを選択すると表示します</div>';return;}
+  if(!adminEntryExisting.length){body.innerHTML='<div class="empty-state">この月の既存シフトは0件です。空日も選択できます。</div>';return;}
+  adminEntryExisting.slice().sort((a,b)=>a.day-b.day||a.start.localeCompare(b.start)).forEach(s=>{
+    const row=document.createElement('div');row.className='admin-entry-row';
+    const head=document.createElement('div');head.className='admin-entry-row-head';
+    const label=document.createElement('strong');label.textContent=adminEntryDateKey(s.year,s.month,s.day)+'　'+s.start+'〜'+dispEnd(s.start,s.end);head.appendChild(label);
+    const chip=document.createElement('span');chip.className='origin-chip'+(s.source==='SELF'?' self':'');chip.textContent=s.source==='ADMIN'?'管理者登録':'本人申請';head.appendChild(chip);row.appendChild(head);
+    const meta=document.createElement('div');meta.className='admin-staff-meta';meta.textContent='状態: '+s.status+' / ID: '+s.id;row.appendChild(meta);
+    if(s.canManage){const actions=document.createElement('div');actions.className='shift-actions';
+      const edit=document.createElement('button');edit.type='button';edit.className='btn-edit';edit.textContent='時間変更';edit.onclick=()=>editAdminEntryExisting(s);actions.appendChild(edit);
+      const del=document.createElement('button');del.type='button';del.className='btn-delete';del.textContent='削除';del.onclick=()=>deleteAdminEntryExisting(s);actions.appendChild(del);row.appendChild(actions);}
+    body.appendChild(row);
+  });
+}
+
+async function submitAdminShiftEntries() {
+  if(adminEntryBusy||!adminEntryStaff||!adminEntryStore)return;
+  const items=Object.values(adminEntrySelected);
+  items.forEach(s=>delete s.error);
+  if(!items.length){showAdminEntryStatus('日付を選択してください。',true);return;}
+  const summary=items.map(s=>adminEntryDateKey(s.year,s.month,s.day)+' '+s.start+'〜'+dispEnd(s.start,s.end)).join('\n');
+  if(!confirm('次の内容を管理者登録します。\n\n店舗: '+adminEntryStore.name+'\nスタッフ: '+adminEntryStaff.name+'（'+adminEntryStaff.id+'）\n\n'+summary+'\n\n登録状態は「申請中」です。確定・LINE通知は行いません。'))return;
+  adminEntryBusy=true;renderAdminEntrySubmitState();showAdminEntryStatus('登録中です。追加操作をしないでください…',false);
+  const requestId=adminRequestId();
+  try{
+    const data=await adminShiftGet({action:'adminCreateShift',targetStaffId:adminEntryStaff.id,storeId:adminEntryStore.id,shifts:JSON.stringify(items),requestId});
+    if(!data||!data.ok){(data&&data.errors||[]).forEach(e=>{if(adminEntrySelected[e.date])adminEntrySelected[e.date].error=e.error;});throw new Error((data&&data.error)||(data&&data.errors&&data.errors[0]&&data.errors[0].error)||'登録できませんでした。');}
+    await loadAdminEntryExisting();
+    const ids=new Set(adminEntryExisting.map(s=>s.id));const missing=(data.saved||[]).filter(s=>!ids.has(s.id));
+    if(missing.length)throw new Error('保存後の再取得結果が一致しません。追加操作せず管理者へ連絡してください。');
+    const failedKeys=new Set((data.errors||[]).map(e=>e.date));
+    Object.keys(adminEntrySelected).forEach(k=>{if(!failedKeys.has(k))delete adminEntrySelected[k];});
+    (data.errors||[]).forEach(e=>{if(adminEntrySelected[e.date])adminEntrySelected[e.date].error=e.error;});
+    renderAdminEntrySelected();renderAdminEntryCalendar();
+    showAdminEntryStatus((data.saved||[]).length+'件を管理者登録しました。再取得でも一致しました。'+(data.partial?'\n一部登録できない日があります。内容を確認してください。':''),!!data.partial);
+    await loadConfirmData();
+  }catch(e){showAdminEntryStatus(e.message,true);renderAdminEntrySelected();}
+  finally{adminEntryBusy=false;renderAdminEntryCalendar();renderAdminEntrySubmitState();}
+}
+
+async function editAdminEntryExisting(shift) {
+  if(adminEntryBusy)return;const start=prompt('開始時間を入力してください（例 19:00）',shift.start);if(start===null)return;
+  const end=prompt('終了時間を入力してください（例 28:00 / 状況次第）',shift.end);if(end===null)return;
+  if(!confirm(adminEntryDateKey(shift.year,shift.month,shift.day)+' の管理者登録を '+start+'〜'+dispEnd(start,end)+' に変更しますか？'))return;
+  adminEntryBusy=true;showAdminEntryStatus('変更中です。追加操作をしないでください…',false);
+  try{const data=await adminShiftGet({action:'adminUpdateShift',id:shift.id,targetStaffId:adminEntryStaff.id,storeId:adminEntryStore.id,year:shift.year,month:shift.month,day:shift.day,start:start,end:end,requestId:adminRequestId()});
+    if(!data||!data.ok)throw new Error((data&&data.error)||'変更できませんでした。');await loadAdminEntryExisting();
+    const saved=adminEntryExisting.find(s=>s.id===shift.id);if(!saved||saved.start!==start)throw new Error('変更後の再取得結果が一致しません。');
+    showAdminEntryStatus('変更しました。再取得でも一致しました。',false);await loadConfirmData();
+  }catch(e){showAdminEntryStatus(e.message,true);}finally{adminEntryBusy=false;renderAdminEntryCalendar();renderAdminEntrySubmitState();}
+}
+
+async function deleteAdminEntryExisting(shift) {
+  if(adminEntryBusy)return;if(!confirm(adminEntryDateKey(shift.year,shift.month,shift.day)+' '+shift.start+'〜'+dispEnd(shift.start,shift.end)+' の管理者登録を削除しますか？\nこの操作は取り消せません。'))return;
+  adminEntryBusy=true;showAdminEntryStatus('削除中です。追加操作をしないでください…',false);
+  try{const data=await adminShiftGet({action:'adminDeleteShift',id:shift.id,targetStaffId:adminEntryStaff.id,requestId:adminRequestId()});
+    if(!data||!data.ok)throw new Error((data&&data.error)||'削除できませんでした。');await loadAdminEntryExisting();
+    if(adminEntryExisting.some(s=>s.id===shift.id))throw new Error('削除後も対象シフトが残っています。再操作せず管理者へ連絡してください。');
+    showAdminEntryStatus('削除しました。再取得で0件を確認しました。',false);await loadConfirmData();
+  }catch(e){showAdminEntryStatus(e.message,true);}finally{adminEntryBusy=false;renderAdminEntryCalendar();renderAdminEntrySubmitState();}
 }
 
 // ============================================================
@@ -1458,24 +1811,25 @@ function openConfirmModal(key) {
   items.forEach(it => {
     const row = document.createElement('div'); row.className='cf-row';
     const skill = it.skill==='熟練'?'★':it.skill==='成長中'?'△':it.skill==='新人'?'○':'';
+    const origin = it.source === 'ADMIN' ? '<span class="origin-chip">管理者登録</span>' : '<span class="origin-chip self">本人申請</span>';
     // 「時間変更」ボタン：過去日(active===false)・見送り・休みには出さない。申請中/確定・未通知/通知済みに出す。
     const canEditTime = (it.active !== false) && !it.rest && !it.declined;
     const editBtn = canEditTime ? `<button class="cf-edit" onclick="openConfirmEdit('${it.id}','${it.start}','${it.end}')">時間変更</button>` : '';
     // SHIFT-017：削除は「時間変更できる状態」と同条件＝過去日・見送り・休みには出さない（誤操作防止）
     const delBtn = canEditTime ? `<button class="cf-del" onclick="cfDelete('${it.id}','${String(it.name).replace(/'/g,"\\'")}')">削除</button>` : '';
     if (it.rest) {
-      row.innerHTML = `<div style="width:22px;flex-shrink:0"></div><div class="cf-info"><div class="cf-name" style="color:#aaa">${skill}${it.name}</div></div><div class="cf-chip" style="background:#f0f0f0;color:#999">休み</div>`;
+      row.innerHTML = `<div style="width:22px;flex-shrink:0"></div><div class="cf-info"><div class="cf-name" style="color:#aaa">${skill}${it.name}${origin}</div></div><div class="cf-chip" style="background:#f0f0f0;color:#999">休み</div>`;
     } else if (it.declined) {
-      row.innerHTML = `<div style="width:22px;flex-shrink:0"></div><div class="cf-info"><div class="cf-name" style="color:#aaa">${skill}${it.name}</div><div class="cf-time" style="color:#bbb">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip" style="background:#f0f0f0;color:#999">見送り</div><button class="cf-undo" onclick="revertOne('${it.id}')">取消</button>`;
+      row.innerHTML = `<div style="width:22px;flex-shrink:0"></div><div class="cf-info"><div class="cf-name" style="color:#aaa">${skill}${it.name}${origin}</div><div class="cf-time" style="color:#bbb">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip" style="background:#f0f0f0;color:#999">見送り</div><button class="cf-undo" onclick="revertOne('${it.id}')">取消</button>`;
     } else if (it.confirmed && it.notified) {
-      row.innerHTML = `<div style="width:22px;flex-shrink:0;text-align:center;color:#3182ce;font-weight:bold">✓</div><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip conf">通知済み</div>${editBtn}${delBtn}`;
+      row.innerHTML = `<div style="width:22px;flex-shrink:0;text-align:center;color:#3182ce;font-weight:bold">✓</div><div class="cf-info"><div class="cf-name">${skill}${it.name}${origin}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip conf">通知済み</div>${editBtn}${delBtn}`;
     } else if (it.confirmed && it.active === false) {
       // 過去日の未送信確定：勤務データは残すが「未通知（通知待ち）」の強調は出さず、中立の「確定」表示にする（取消は従来どおり可能）
-      row.innerHTML = `<div style="width:22px;flex-shrink:0;text-align:center;color:#3182ce;font-weight:bold">✓</div><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip conf">確定</div><button class="cf-undo" onclick="revertOne('${it.id}')">取消</button>`;
+      row.innerHTML = `<div style="width:22px;flex-shrink:0;text-align:center;color:#3182ce;font-weight:bold">✓</div><div class="cf-info"><div class="cf-name">${skill}${it.name}${origin}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip conf">確定</div><button class="cf-undo" onclick="revertOne('${it.id}')">取消</button>`;
     } else if (it.confirmed) {
-      row.innerHTML = `<div style="width:22px;flex-shrink:0;text-align:center;color:#3182ce;font-weight:bold">✓</div><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip" style="background:#fff3e0;color:#e67e22">確定・未通知</div><button class="cf-undo" onclick="revertOne('${it.id}')">取消</button>${editBtn}${delBtn}`;
+      row.innerHTML = `<div style="width:22px;flex-shrink:0;text-align:center;color:#3182ce;font-weight:bold">✓</div><div class="cf-info"><div class="cf-name">${skill}${it.name}${origin}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip" style="background:#fff3e0;color:#e67e22">確定・未通知</div><button class="cf-undo" onclick="revertOne('${it.id}')">取消</button>${editBtn}${delBtn}`;
     } else {
-      row.innerHTML = `<input type="checkbox" class="cf-check" value="${it.id}" checked onchange="updateCfBtn()"><div class="cf-info"><div class="cf-name">${skill}${it.name}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip pend">申請中</div>${editBtn}${delBtn}`;
+      row.innerHTML = `<input type="checkbox" class="cf-check" value="${it.id}" checked onchange="updateCfBtn()"><div class="cf-info"><div class="cf-name">${skill}${it.name}${origin}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip pend">申請中</div>${editBtn}${delBtn}`;
     }
     list.appendChild(row);
   });
@@ -1591,7 +1945,7 @@ async function submitStaffAdd() {
     if (staffAddFrom === 'proxy') await openProxyPicker();
     else await loadStaffTab();
     alert(`${data.name} さん（${data.staffId}）を登録しました。\n\n` +
-          (staffAddFrom === 'proxy' ? 'このままシフトを代理で追加できます。' : 'シフト管理の代理入力から選べます。'));
+          '「スタッフのシフト登録」から対象スタッフとして選べます。');
   } catch (e) {
     showStaffAddMsg('通信エラー: ' + e.message, true);
   } finally {
