@@ -825,8 +825,8 @@ async function loadApplyData() {
   if (multiMode) { multiPicked = {}; document.querySelectorAll('.dow-chip').forEach(x=>x.classList.remove('on')); updateBatchCount(); } // 月・店舗切替で選択をリセット
   renderApplyCal(); // 枠を即表示（データは後から反映）
   const [a, b] = await Promise.allSettled([
-    gasGet({ action:'getShifts',  lineId, month: applyMonth }),
-    gasGet({ action:'getShortage', storeId: applyStore.id, month: applyMonth }),
+    gasGet({ action:'getShifts',  lineId, year:applyYear, month: applyMonth }),
+    gasGet({ action:'getShortage', storeId: applyStore.id, year:applyYear, month: applyMonth }),
   ]);
   if (a.status==='fulfilled' && a.value.ok) a.value.shifts.filter(s=>s.storeId===applyStore.id).forEach(s => applyExisting[s.date]={start:s.start,end:s.end,confirmed:s.confirmed});
   if (b.status==='fulfilled' && b.value.ok) applyShortage = b.value.days;
@@ -880,7 +880,7 @@ function tapApplyDate(month,day,key) {
   if (multiMode) {
     const dt=new Date(applyYear,month-1,day);
     if (multiPicked[key]) delete multiPicked[key];
-    else multiPicked[key]={month,day,dow:dt.getDay()};
+    else multiPicked[key]={year:applyYear,month,day,dow:dt.getDay()};
     renderApplyCal(); updateBatchCount(); return;
   }
   if (applySelected[key]?.storeId===applyStore.id) { delete applySelected[key]; renderApplyCal(); renderApplyList(); updateApplyBtn(); return; }
@@ -888,7 +888,7 @@ function tapApplyDate(month,day,key) {
     const dt=new Date(applyYear,month-1,day); const e=applyExisting[key];
     if (!confirm(`📅 ${month}/${day}（${DOW[dt.getDay()]}）のシフト\n${applyStore.name}\n\n🕒 ${e.start} 〜 ${dispEnd(e.start, e.end)}\n\nこの日にもう一件 希望を追加しますか？`)) return;
   }
-  pendingDate={month,day,key}; pendingMode='apply';
+  pendingDate={year:applyYear,month,day,key}; pendingMode='apply';
   openModal(month,day,applyStore);
 }
 
@@ -934,7 +934,7 @@ function pickWeekday(dow) {
   for (let d=1; d<=last; d++) { const dt=new Date(applyYear,applyMonth-1,d); if(dt.getDay()===dow && dt>=today && dt<=max) keys.push({key:`${applyMonth}/${d}`,month:applyMonth,day:d,dow}); }
   if (!keys.length) return;
   const allOn = keys.every(k=>multiPicked[k.key]);
-  keys.forEach(k=>{ if(allOn) delete multiPicked[k.key]; else multiPicked[k.key]={month:k.month,day:k.day,dow:k.dow}; });
+  keys.forEach(k=>{ if(allOn) delete multiPicked[k.key]; else multiPicked[k.key]={year:applyYear,month:k.month,day:k.day,dow:k.dow}; });
   document.querySelectorAll('.dow-chip')[dow].classList.toggle('on', !allOn);
   renderApplyCal(); updateBatchCount();
 }
@@ -1166,7 +1166,7 @@ async function loadDaysData() {
   setDaysStatus('loading', '最新の営業設定を読み込み中…');
   renderDaysCal();
   try {
-    const data = await gasGet({ action:'getDayStatus', lineId, storeId:context.storeId, month:context.month });
+    const data = await gasGet({ action:'getDayStatus', lineId, storeId:context.storeId, year:context.year, month:context.month });
     if (!data.ok) throw new Error(data.error || '営業設定を取得できませんでした');
     if (generation !== daysLoadGeneration || daysStore.id !== context.storeId || daysYear !== context.year || daysMonth !== context.month) return false;
     daysFixedOff = data.fixedOff || [];
@@ -1242,7 +1242,7 @@ async function tapDaysDate(day, key) {
     setDaysStatus('loading', expectedOn ? 'ミーティングを設定中…' : 'ミーティングを解除中…');
     renderDaysCal();
     try {
-      const data = await gasGet({ action:'setMeeting', lineId, storeId:daysStore.id, month:daysMonth, day, on:expectedOn ? '1' : '0' });
+      const data = await gasGet({ action:'setMeeting', lineId, storeId:daysStore.id, year:daysYear, month:daysMonth, day, on:expectedOn ? '1' : '0' });
       if (!data.ok) throw new Error(data.error || 'ミーティング設定を変更できませんでした');
       if (Boolean(data.requestedOn) !== expectedOn) throw new Error('サーバーの処理結果が要求内容と一致しません');
       const loaded = await loadDaysData();
@@ -1270,7 +1270,7 @@ async function tapDaysDate(day, key) {
   else             { type='holiday'; msg=`${daysMonth}/${day}（${DOW[dow]}）の${daysStore.name}を臨時休業にしますか？`; }
   if (!confirm(msg)) return;
   try {
-    const data = await gasGet({ action:'setDayType', lineId, storeId:daysStore.id, month:daysMonth, day, type });
+    const data = await gasGet({ action:'setDayType', lineId, storeId:daysStore.id, year:daysYear, month:daysMonth, day, type });
     if (!data.ok) throw new Error(data.error || '営業設定を変更できませんでした');
     await loadDaysData();
   } catch(e) { alert('変更エラー: '+e.message); }
@@ -1612,7 +1612,7 @@ function startProxyAdd(staff) {
 // 時間入力モーダルの確定 → proxyShift で1件だけ登録（確定・通知はしない）
 async function submitProxyAdd(start, end) {
   const [m, d] = confirmDayKey.split('/').map(Number);
-  const shifts = [{ month:m, day:d, start, end, storeId:confirmStore.id }];
+  const shifts = [{ year:confirmYear, month:m, day:d, start, end, storeId:confirmStore.id }];
   try {
     const data = await gasGet({
       action:'proxyShift', lineId,
@@ -1781,7 +1781,7 @@ function confirmTime() {
   }
   // まとめて連続申請：選択した全日に同じ時間を適用
   if (pendingMode==='applyBatch') {
-    Object.values(multiPicked).forEach(d=>{ applySelected[`${d.month}/${d.day}`]={month:d.month,day:d.day,start,end,storeId:applyStore.id,part}; });
+    Object.values(multiPicked).forEach(d=>{ applySelected[`${d.month}/${d.day}`]={year:d.year,month:d.month,day:d.day,start,end,storeId:applyStore.id,part}; });
     multiPicked={}; multiMode=false;
     document.getElementById('batch-tools').style.display='none';
     document.getElementById('batch-toggle').classList.remove('active');
@@ -1791,8 +1791,8 @@ function confirmTime() {
     renderApplyCal(); renderApplyList(); updateApplyBtn(); updateBatchCount();
     pendingDate=null; pendingMode='apply'; return;
   }
-  const {month,day,key}=pendingDate;
-  const entry={month,day,start,end,storeId:applyStore.id,part};
+  const {year,month,day,key}=pendingDate;
+  const entry={year,month,day,start,end,storeId:applyStore.id,part};
   { applySelected[key]=entry; document.getElementById('modal').classList.remove('show'); renderApplyCal(); renderApplyList(); updateApplyBtn(); }
   pendingDate=null;
 }
