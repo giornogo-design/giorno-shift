@@ -1044,6 +1044,20 @@ function showAdminEntryStatus(message, isError) {
   el.style.border = '1px solid ' + (isError ? '#ffd0d0' : '#bfe7cd');
 }
 
+// 失敗表示へ付ける詳細。operationId・エラーコード・対象スタッフ・対象日を示す。
+function adminShiftFailureDetail(data, operationId, code) {
+  const d = data || {}; const dates = [];
+  (d.errors || []).forEach(function(e){ if (e && e.date && dates.indexOf(e.date) < 0) dates.push(e.date); });
+  const staff = (typeof adminEntryStaff !== 'undefined' && adminEntryStaff)
+    ? adminEntryStaff.name + '（' + adminEntryStaff.id + '）' : '';
+  const lines = [];
+  if (operationId) lines.push('操作ID: ' + operationId);
+  if (code)        lines.push('エラーコード: ' + code);
+  if (staff)       lines.push('対象スタッフ: ' + staff);
+  if (dates.length) lines.push('対象日: ' + dates.join('、'));
+  return lines.length ? '\n' + lines.join('\n') : '';
+}
+
 function adminShiftFailureMessage(data, fallback) {
   data=data||{};
   const operationId=data.operationId || ((data.errors||[]).find(e=>e.operationId)||{}).operationId || '';
@@ -1054,8 +1068,9 @@ function adminShiftFailureMessage(data, fallback) {
     return '⚠️ 操作は完了していない可能性があります。\n同じ操作を繰り返さないでください。\n操作ID: '+(operationId||'取得不能')+'\n管理者によるシート・カレンダー・操作履歴の確認が必要です。';
   }
   if(status==='COMPENSATED'||data.compensationOk===true){
-    return '保存処理に失敗しましたが、自動復旧して操作前の状態へ戻しました。\n'+(operationId?'操作ID: '+operationId+'\n':'')+'内容を確認してから、必要な場合だけ新しい操作として実行してください。';
-  }
+      return '❌ 登録できませんでした。作成途中のデータは自動的に元へ戻しました。\n再登録せず、管理者へ連絡してください。'
+        + adminShiftFailureDetail(data, operationId, code || 'FINAL_STATE_MISMATCH');
+    }
   if(code.indexOf('CALENDAR_')===0||code==='FINAL_STATE_MISMATCH')return 'カレンダーとの整合性を確認できません。'+(operationId?'\n操作ID: '+operationId:'')+'\n同じ操作を繰り返さず管理者へ連絡してください。';
   if(code.indexOf('AUDIT_')===0)return '操作履歴を記録できません。業務データは安全確認のため変更していないか、自動復旧されています。'+(operationId?'\n操作ID: '+operationId:'');
   if(code.indexOf('AUTH')>=0||String(data.message||data.error||'').indexOf('管理者')>=0)return '管理者認証エラー: '+(data.message||data.error||fallback||'画面を開き直してください。');
@@ -1063,9 +1078,37 @@ function adminShiftFailureMessage(data, fallback) {
   return data.message||data.error||fallback||'保存できませんでした。';
 }
 
+// SHIFT-022: 管理者操作の成功条件を1か所へ集約する。
+// GASの ok は「saved.length>0 かつ NEEDS_REVIEWなし」でしか false にならないため、
+// 複数日で一部が COMPENSATED / FAILED でも ok:true になりうる。UI側で全件COMPLETEDを要求する。
+const ADMIN_OP_BAD_STATUSES = ['COMPENSATED','FAILED','NEEDS_REVIEW'];
+const ADMIN_OP_BAD_CODES    = ['FINAL_STATE_MISMATCH','NEEDS_REVIEW'];
+
+function adminShiftOperationStates(data) {
+  const d = data || {}; const list = [];
+  if (d.operationStatus) list.push(String(d.operationStatus));
+  (d.saved  || []).forEach(function(x){ if (x && x.operationStatus) list.push(String(x.operationStatus)); });
+  (d.errors || []).forEach(function(x){ if (x && x.operationStatus) list.push(String(x.operationStatus)); });
+  return list;
+}
+function adminShiftHasBadState(data) {
+  const d = data || {};
+  if (adminShiftOperationStates(d).some(function(st){ return ADMIN_OP_BAD_STATUSES.indexOf(st) >= 0; })) return true;
+  if (d.needsReview === true) return true;
+  const codes = [d.errorCode].concat((d.errors||[]).map(function(e){ return e && e.errorCode; }));
+  if (codes.some(function(c){ return c && ADMIN_OP_BAD_CODES.indexOf(String(c)) >= 0; })) return true;
+  if ((d.errors || []).length > 0) return true;
+  return false;
+}
+function adminShiftAllCompleted(data) {
+  const states = adminShiftOperationStates(data);
+  if (!states.length) return false;
+  return states.every(function(st){ return st === 'COMPLETED'; });
+}
 function assertAdminShiftSuccess(data, fallback) {
   if(!data||data.ok!==true){const e=new Error(adminShiftFailureMessage(data,fallback));e.adminResponse=data||null;throw e;}
-  if(data.needsReview===true||data.operationStatus==='NEEDS_REVIEW'){const e=new Error(adminShiftFailureMessage(data,fallback));e.adminResponse=data;throw e;}
+  if(adminShiftHasBadState(data)){const e=new Error(adminShiftFailureMessage(data,fallback));e.adminResponse=data;throw e;}
+  if(!adminShiftAllCompleted(data)){const e=new Error(adminShiftFailureMessage(data,fallback));e.adminResponse=data;throw e;}
   return data;
 }
 
@@ -1247,7 +1290,10 @@ async function submitAdminShiftEntries() {
   const requestId=adminRequestId();
   try{
     const data=await adminShiftGet({action:'adminCreateShift',targetStaffId:adminEntryStaff.id,storeId:adminEntryStore.id,shifts:JSON.stringify(items),requestId});
-    if(!data||data.ok!==true||data.needsReview===true){(data&&data.errors||[]).forEach(e=>{if(adminEntrySelected[e.date])adminEntrySelected[e.date].error=e.error;});assertAdminShiftSuccess(data,'登録できませんでした。');}
+      // 失敗日を各行へ反映してから、成功条件（全件COMPLETED）を厳格に判定する。
+      // saved.length>0 でも COMPENSATED/FAILED/NEEDS_REVIEW があれば例外にする。
+      (data&&data.errors||[]).forEach(e=>{if(adminEntrySelected[e.date])adminEntrySelected[e.date].error=e.error;});
+      assertAdminShiftSuccess(data,'登録できませんでした。');
     await loadAdminEntryExisting();
     const ids=new Set(adminEntryExisting.map(s=>s.id));const missing=(data.saved||[]).filter(s=>!ids.has(s.id));
     if(missing.length)throw new Error('保存後の再取得結果が一致しません。追加操作せず管理者へ連絡してください。');
@@ -1255,9 +1301,21 @@ async function submitAdminShiftEntries() {
     Object.keys(adminEntrySelected).forEach(k=>{if(!failedKeys.has(k))delete adminEntrySelected[k];});
     (data.errors||[]).forEach(e=>{if(adminEntrySelected[e.date])adminEntrySelected[e.date].error=e.error;});
     renderAdminEntrySelected();renderAdminEntryCalendar();
-    showAdminEntryStatus((data.saved||[]).length+'件を管理者登録しました。再取得でも一致しました。'+(data.partial?'\n一部登録できない日があります。内容を確認してください。':''),!!data.partial);
+      const okDates=(data.saved||[]).map(x=>adminEntryDateKey(x.year,x.month,x.day)).filter(Boolean);
+      showAdminEntryStatus((data.saved||[]).length+'件を管理者登録しました。再取得でも一致しました。'
+        +(okDates.length?'\n登録できた日: '+okDates.join('、'):''),false);
     await loadConfirmData();
-  }catch(e){showAdminEntryStatus(e.adminResponse?e.message:'通信エラー: '+e.message,true);renderAdminEntrySelected();}
+  }catch(e){
+    const d=e.adminResponse;
+    let msg=d?e.message:'通信エラー: '+e.message;
+    if(d){
+      const okD=(d.saved||[]).map(x=>adminEntryDateKey(x.year,x.month,x.day)).filter(Boolean);
+      const ngD=(d.errors||[]).map(x=>x.date).filter(Boolean);
+      if(okD.length) msg+='\n\n【保存された日】'+okD.join('、')+'\n※この日は登録済みです。重複登録しないでください。';
+      if(ngD.length) msg+='\n【失敗した日】'+ngD.join('、');
+    }
+    showAdminEntryStatus(msg,true);renderAdminEntrySelected();
+  }
   finally{adminEntryBusy=false;renderAdminEntryCalendar();renderAdminEntrySubmitState();}
 }
 
