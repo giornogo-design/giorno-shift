@@ -1133,23 +1133,13 @@ async function submitAdminShiftEntries() {
 }
 
 async function editAdminEntryExisting(shift) {
-  if(adminEntryBusy)return;
-  const currentDate=adminEntryDateKey(shift.year,shift.month,shift.day);
-  const dateText=prompt('対象日を入力してください（YYYY-MM-DD）',currentDate);if(dateText===null)return;
-  const dm=String(dateText).match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if(!dm){showAdminEntryStatus('日付はYYYY-MM-DD形式で入力してください。',true);return;}
-  const newYear=parseInt(dm[1],10),newMonth=parseInt(dm[2],10),newDay=parseInt(dm[3],10);
-  const checkDate=new Date(newYear,newMonth-1,newDay);
-  if(checkDate.getFullYear()!==newYear||checkDate.getMonth()+1!==newMonth||checkDate.getDate()!==newDay){showAdminEntryStatus('存在しない日付です。',true);return;}
-  const start=prompt('開始時間を入力してください（例 19:00）',shift.start);if(start===null)return;
+  if(adminEntryBusy)return;const start=prompt('開始時間を入力してください（例 19:00）',shift.start);if(start===null)return;
   const end=prompt('終了時間を入力してください（例 28:00 / 状況次第）',shift.end);if(end===null)return;
-  if(!confirm(currentDate+' の管理者登録を\n'+dateText+' '+start+'〜'+dispEnd(start,end)+' に変更しますか？'))return;
+  if(!confirm(adminEntryDateKey(shift.year,shift.month,shift.day)+' の管理者登録を '+start+'〜'+dispEnd(start,end)+' に変更しますか？'))return;
   adminEntryBusy=true;showAdminEntryStatus('変更中です。追加操作をしないでください…',false);
-  try{const data=await adminShiftGet({action:'adminUpdateShift',id:shift.id,targetStaffId:adminEntryStaff.id,storeId:adminEntryStore.id,year:newYear,month:newMonth,day:newDay,start:start,end:end,requestId:adminRequestId()});
-    if(!data||!data.ok)throw new Error((data&&data.error)||'変更できませんでした。');
-    const verify=await adminShiftGet({action:'adminGetShiftEntries',targetStaffId:adminEntryStaff.id,storeId:adminEntryStore.id,year:newYear,month:newMonth});
-    const saved=verify&&verify.ok&&(verify.shifts||[]).find(s=>s.id===shift.id);if(!saved||saved.start!==start||saved.year!==newYear||saved.month!==newMonth||saved.day!==newDay)throw new Error('変更後の再取得結果が一致しません。');
-    adminEntryYear=newYear;adminEntryMonth=newMonth;await loadAdminEntryExisting();
+  try{const data=await adminShiftGet({action:'adminUpdateShift',id:shift.id,targetStaffId:adminEntryStaff.id,storeId:adminEntryStore.id,year:shift.year,month:shift.month,day:shift.day,start:start,end:end,requestId:adminRequestId()});
+    if(!data||!data.ok)throw new Error((data&&data.error)||'変更できませんでした。');await loadAdminEntryExisting();
+    const saved=adminEntryExisting.find(s=>s.id===shift.id);if(!saved||saved.start!==start)throw new Error('変更後の再取得結果が一致しません。');
     showAdminEntryStatus('変更しました。再取得でも一致しました。',false);await loadConfirmData();
   }catch(e){showAdminEntryStatus(e.message,true);}finally{adminEntryBusy=false;renderAdminEntryCalendar();renderAdminEntrySubmitState();}
 }

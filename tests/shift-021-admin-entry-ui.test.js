@@ -24,7 +24,6 @@ test('旧proxyShiftを新UIから呼ばない',()=>{
 });
 test('保存後に再取得してID一致を確認する',()=>assert(html.includes('missing=(data.saved||[]).filter')));
 test('部分成功を画面で区別する',()=>assert(html.includes('data.partial')));
-test('編集時の日付変更でも明示年を送る',()=>assert(html.includes('year:newYear,month:newMonth,day:newDay')));
 test('作成中は追加操作を禁止する',()=>assert(html.includes('adminEntryBusy=true')));
 test('管理者登録と本人申請を表示で区別する',()=>assert(html.includes("s.source==='ADMIN'?'管理者登録':'本人申請'")));
 test('管理者認証はLINE資格情報からセッション化する',()=>assert(html.includes('adminCreateShiftSession')&&html.includes('liff.getIDToken')));
