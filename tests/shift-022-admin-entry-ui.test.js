@@ -19,7 +19,7 @@ test('登録前確認がある',()=>assert(html.includes('次の内容を管理�
 test('二重送信防止requestIdを送る',()=>assert(html.includes("requestId=adminRequestId()")||html.includes('requestId});')));
 test('管理者専用APIを呼ぶ',()=>assert(html.includes("action:'adminCreateShift'")));
 test('旧proxyShiftを新UIから呼ばない',()=>{
-  const block=html.slice(html.indexOf('// SHIFT-021 管理者専用'),html.indexOf('// ============================================================\n// ① 申請タブ'));
+  const block=html.slice(html.indexOf('// SHIFT-022 管理者専用'),html.indexOf('// ============================================================\n// ① 申請タブ'));
   assert(!block.includes("action:'proxyShift'"));
 });
 test('保存後に再取得してID一致を確認する',()=>assert(html.includes('missing=(data.saved||[]).filter')));
@@ -30,7 +30,7 @@ test('管理者登録と本人申請を表示で区別する',()=>assert(html.in
 test('管理者認証はLINE資格情報からセッション化する',()=>assert(html.includes('adminCreateShiftSession')&&html.includes('liff.getIDToken')));
 test('認証情報と管理者tokenはPOST本文で送る',()=>assert(html.includes('async function gasPost')&&html.includes("transport:'adminShift'")&&html.includes('await gasPost')));
 test('新UIの管理者APIへlineIdを送らない',()=>{
-  const block=html.slice(html.indexOf('// SHIFT-021 管理者専用'),html.indexOf('// ============================================================\n// ① 申請タブ'));
+  const block=html.slice(html.indexOf('// SHIFT-022 管理者専用'),html.indexOf('// ============================================================\n// ① 申請タブ'));
   assert(!/adminShiftGet\(\{[^}]*lineId/.test(block));
 });
 test('外部UIライブラリを追加していない',()=>assert(!/(select2|choices\.js|react|vue|bootstrap)/i.test(html)));
