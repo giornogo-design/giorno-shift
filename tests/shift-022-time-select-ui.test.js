@@ -75,10 +75,10 @@ test('15. 値と表示が同じ形式（タイムゾーン変換をしない）'
 test('16. 未選択（空）を先頭に置く',()=>{
   assert.ok(/ph\.value\s*=\s*''/.test(html)&&/時刻を選択/.test(html));
 });
-test('17. 未選択・出勤=退勤を拒否する',()=>{
-  assert.ok(/出勤時刻を選択してください/.test(html));
-  assert.ok(/退勤時刻を選択してください/.test(html));
-  assert.ok(/出勤と退勤に同じ時刻は指定できません/.test(html));
+test('17. 未選択・開始=終了を拒否する',()=>{
+  assert.ok(/開始時刻を選択してください/.test(html));
+  assert.ok(/終了時刻を選択してください/.test(html));
+  assert.ok(/開始と終了に同じ時刻は指定できません/.test(html));
 });
 test('18. 送信payloadの形式が従来と同一（action・引数名を変えない）',()=>{
   assert.ok(/action:'adminCreateShift',targetStaffId:.*storeId:.*shifts:JSON\.stringify\(items\),requestId/.test(adminBlock));
