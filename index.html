@@ -683,7 +683,6 @@ let adminShiftToken = null, adminShiftSessionPromise = null;
 let adminEntryStore = null, adminEntryStaff = null;
 let adminEntryYear = new Date().getFullYear(), adminEntryMonth = new Date().getMonth()+1;
 let adminEntryStaffList = [], adminEntrySelected = {}, adminEntryExisting = [], adminEntryBusy = false;
-let adminEntryLoadGeneration = 0;
 let applyStore = null, applyMonth = new Date().getMonth()+1, applyYear = new Date().getFullYear();
 let applySelected = {}, applyExisting = {}, applyShortage = {};
 let multiMode = false, multiPicked = {};                 // まとめて選択モード
@@ -945,31 +944,6 @@ function showAdminEntryStatus(message, isError) {
   el.style.border = '1px solid ' + (isError ? '#ffd0d0' : '#bfe7cd');
 }
 
-function adminShiftFailureMessage(data, fallback) {
-  data=data||{};
-  const operationId=data.operationId || ((data.errors||[]).find(e=>e.operationId)||{}).operationId || '';
-  const code=data.errorCode || ((data.errors||[])[0]||{}).errorCode || '';
-  const status=data.operationStatus || ((data.errors||[])[0]||{}).operationStatus || '';
-  const needsReview=!!data.needsReview || status==='NEEDS_REVIEW' || (data.errors||[]).some(e=>e.needsReview||e.operationStatus==='NEEDS_REVIEW');
-  if(needsReview){
-    return '⚠️ 操作は完了していない可能性があります。\n同じ操作を繰り返さないでください。\n操作ID: '+(operationId||'取得不能')+'\n管理者によるシート・カレンダー・操作履歴の確認が必要です。';
-  }
-  if(status==='COMPENSATED'||data.compensationOk===true){
-    return '保存処理に失敗しましたが、自動復旧して操作前の状態へ戻しました。\n'+(operationId?'操作ID: '+operationId+'\n':'')+'内容を確認してから、必要な場合だけ新しい操作として実行してください。';
-  }
-  if(code.indexOf('CALENDAR_')===0||code==='FINAL_STATE_MISMATCH')return 'カレンダーとの整合性を確認できません。'+(operationId?'\n操作ID: '+operationId:'')+'\n同じ操作を繰り返さず管理者へ連絡してください。';
-  if(code.indexOf('AUDIT_')===0)return '操作履歴を記録できません。業務データは安全確認のため変更していないか、自動復旧されています。'+(operationId?'\n操作ID: '+operationId:'');
-  if(code.indexOf('AUTH')>=0||String(data.message||data.error||'').indexOf('管理者')>=0)return '管理者認証エラー: '+(data.message||data.error||fallback||'画面を開き直してください。');
-  if(code.indexOf('DUPLICATE')>=0||String(data.message||data.error||'').indexOf('既に')>=0)return '重複エラー: '+(data.message||data.error||fallback||'同じ時間帯が登録済みです。');
-  return data.message||data.error||fallback||'保存できませんでした。';
-}
-
-function assertAdminShiftSuccess(data, fallback) {
-  if(!data||data.ok!==true){const e=new Error(adminShiftFailureMessage(data,fallback));e.adminResponse=data||null;throw e;}
-  if(data.needsReview===true||data.operationStatus==='NEEDS_REVIEW'){const e=new Error(adminShiftFailureMessage(data,fallback));e.adminResponse=data;throw e;}
-  return data;
-}
-
 async function openAdminShiftEntry(prefillDayKey) {
   if (!(staffData && staffData.isAdmin)) return;
   document.querySelectorAll('.modal-overlay.show').forEach(m => m.classList.remove('show'));
@@ -1053,14 +1027,10 @@ async function selectAdminEntryStaff(staff) {
 }
 
 async function loadAdminEntryExisting() {
-  const generation=++adminEntryLoadGeneration;
-  const expectedStaffId=adminEntryStaff&&adminEntryStaff.id,expectedStoreId=adminEntryStore&&adminEntryStore.id;
-  const expectedYear=adminEntryYear,expectedMonth=adminEntryMonth;
   adminEntryExisting=[]; renderAdminEntryCalendar(); renderAdminEntryExisting();
   if(!adminEntryStaff || !adminEntryStore) return;
   try {
-    const data=await adminShiftGet({action:'adminGetShiftEntries',targetStaffId:expectedStaffId,storeId:expectedStoreId,year:expectedYear,month:expectedMonth});
-    if(generation!==adminEntryLoadGeneration||!adminEntryStaff||!adminEntryStore||adminEntryStaff.id!==expectedStaffId||adminEntryStore.id!==expectedStoreId||adminEntryYear!==expectedYear||adminEntryMonth!==expectedMonth)return;
+    const data=await adminShiftGet({action:'adminGetShiftEntries',targetStaffId:adminEntryStaff.id,storeId:adminEntryStore.id,year:adminEntryYear,month:adminEntryMonth});
     if(!data||!data.ok) throw new Error((data&&data.error)||'既存シフトを取得できません。');
     adminEntryExisting=data.shifts||[]; renderAdminEntryCalendar(); renderAdminEntryExisting();
   } catch(e){showAdminEntryStatus(e.message,true);}
@@ -1148,7 +1118,7 @@ async function submitAdminShiftEntries() {
   const requestId=adminRequestId();
   try{
     const data=await adminShiftGet({action:'adminCreateShift',targetStaffId:adminEntryStaff.id,storeId:adminEntryStore.id,shifts:JSON.stringify(items),requestId});
-    if(!data||data.ok!==true||data.needsReview===true){(data&&data.errors||[]).forEach(e=>{if(adminEntrySelected[e.date])adminEntrySelected[e.date].error=e.error;});assertAdminShiftSuccess(data,'登録できませんでした。');}
+    if(!data||!data.ok){(data&&data.errors||[]).forEach(e=>{if(adminEntrySelected[e.date])adminEntrySelected[e.date].error=e.error;});throw new Error((data&&data.error)||(data&&data.errors&&data.errors[0]&&data.errors[0].error)||'登録できませんでした。');}
     await loadAdminEntryExisting();
     const ids=new Set(adminEntryExisting.map(s=>s.id));const missing=(data.saved||[]).filter(s=>!ids.has(s.id));
     if(missing.length)throw new Error('保存後の再取得結果が一致しません。追加操作せず管理者へ連絡してください。');
@@ -1158,7 +1128,7 @@ async function submitAdminShiftEntries() {
     renderAdminEntrySelected();renderAdminEntryCalendar();
     showAdminEntryStatus((data.saved||[]).length+'件を管理者登録しました。再取得でも一致しました。'+(data.partial?'\n一部登録できない日があります。内容を確認してください。':''),!!data.partial);
     await loadConfirmData();
-  }catch(e){showAdminEntryStatus(e.adminResponse?e.message:'通信エラー: '+e.message,true);renderAdminEntrySelected();}
+  }catch(e){showAdminEntryStatus(e.message,true);renderAdminEntrySelected();}
   finally{adminEntryBusy=false;renderAdminEntryCalendar();renderAdminEntrySubmitState();}
 }
 
@@ -1176,22 +1146,22 @@ async function editAdminEntryExisting(shift) {
   if(!confirm(currentDate+' の管理者登録を\n'+dateText+' '+start+'〜'+dispEnd(start,end)+' に変更しますか？'))return;
   adminEntryBusy=true;showAdminEntryStatus('変更中です。追加操作をしないでください…',false);
   try{const data=await adminShiftGet({action:'adminUpdateShift',id:shift.id,targetStaffId:adminEntryStaff.id,storeId:adminEntryStore.id,year:newYear,month:newMonth,day:newDay,start:start,end:end,requestId:adminRequestId()});
-    assertAdminShiftSuccess(data,'変更できませんでした。');
+    if(!data||!data.ok)throw new Error((data&&data.error)||'変更できませんでした。');
     const verify=await adminShiftGet({action:'adminGetShiftEntries',targetStaffId:adminEntryStaff.id,storeId:adminEntryStore.id,year:newYear,month:newMonth});
     const saved=verify&&verify.ok&&(verify.shifts||[]).find(s=>s.id===shift.id);if(!saved||saved.start!==start||saved.year!==newYear||saved.month!==newMonth||saved.day!==newDay)throw new Error('変更後の再取得結果が一致しません。');
     adminEntryYear=newYear;adminEntryMonth=newMonth;await loadAdminEntryExisting();
     showAdminEntryStatus('変更しました。再取得でも一致しました。',false);await loadConfirmData();
-  }catch(e){showAdminEntryStatus(e.adminResponse?e.message:'通信エラー: '+e.message,true);}finally{adminEntryBusy=false;renderAdminEntryCalendar();renderAdminEntrySubmitState();}
+  }catch(e){showAdminEntryStatus(e.message,true);}finally{adminEntryBusy=false;renderAdminEntryCalendar();renderAdminEntrySubmitState();}
 }
 
 async function deleteAdminEntryExisting(shift) {
   if(adminEntryBusy)return;if(!confirm(adminEntryDateKey(shift.year,shift.month,shift.day)+' '+shift.start+'〜'+dispEnd(shift.start,shift.end)+' の管理者登録を削除しますか？\nこの操作は取り消せません。'))return;
   adminEntryBusy=true;showAdminEntryStatus('削除中です。追加操作をしないでください…',false);
   try{const data=await adminShiftGet({action:'adminDeleteShift',id:shift.id,targetStaffId:adminEntryStaff.id,requestId:adminRequestId()});
-    assertAdminShiftSuccess(data,'削除できませんでした。');await loadAdminEntryExisting();
+    if(!data||!data.ok)throw new Error((data&&data.error)||'削除できませんでした。');await loadAdminEntryExisting();
     if(adminEntryExisting.some(s=>s.id===shift.id))throw new Error('削除後も対象シフトが残っています。再操作せず管理者へ連絡してください。');
     showAdminEntryStatus('削除しました。再取得で0件を確認しました。',false);await loadConfirmData();
-  }catch(e){showAdminEntryStatus(e.adminResponse?e.message:'通信エラー: '+e.message,true);}finally{adminEntryBusy=false;renderAdminEntryCalendar();renderAdminEntrySubmitState();}
+  }catch(e){showAdminEntryStatus(e.message,true);}finally{adminEntryBusy=false;renderAdminEntryCalendar();renderAdminEntrySubmitState();}
 }
 
 // ============================================================
