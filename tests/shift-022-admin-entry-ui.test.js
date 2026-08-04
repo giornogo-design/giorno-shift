@@ -14,7 +14,7 @@ test('在籍スタッフAPIを使う',()=>assert(html.includes("action:'adminGet
 test('年月を独立して保持する',()=>assert(html.includes('adminEntryYear')&&html.includes('adminEntryMonth')));
 test('ISO年付きキーで日付を分離する',()=>assert(html.includes("year+'-'+String(month).padStart")));
 test('複数日をオブジェクトで保持する',()=>assert(html.includes('adminEntrySelected[key]')));
-test('日ごとの開始終了入力がある',()=>assert(html.includes("['開始',s.start,'start']")&&html.includes("['終了',s.end,'end']")));
+test('日ごとの出勤退勤入力がある',()=>assert(html.includes("['出勤',s.start,'start']")&&html.includes("['退勤',s.end,'end']")));
 test('登録前確認がある',()=>assert(html.includes('次の内容を管理者登録します')));
 test('二重送信防止requestIdを送る',()=>assert(html.includes("requestId=adminRequestId()")||html.includes('requestId});')));
 test('管理者専用APIを呼ぶ',()=>assert(html.includes("action:'adminCreateShift'")));
