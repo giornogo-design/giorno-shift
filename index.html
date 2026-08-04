@@ -255,6 +255,15 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .sel-part.night { background: #e6e9ff; color: #4555c0; }
 .btn-confirm { width: 100%; padding: 14px; background: #06c755; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: bold; cursor: pointer; margin-top: 8px; }
 .btn-cancel  { width: 100%; padding: 12px; background: #f5f5f5; color: #555; border: none; border-radius: 12px; font-size: 15px; cursor: pointer; margin-top: 8px; }
+.admin-time-dialog-back{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px}
+.admin-time-dialog{background:#fff;border-radius:12px;padding:16px;width:100%;max-width:340px;box-shadow:0 8px 24px rgba(0,0,0,.2)}
+.admin-time-dialog-title{font-weight:700;margin-bottom:12px}
+.admin-time-dialog label{display:block;margin-bottom:12px;font-size:13px;color:#555}
+.admin-time-dialog select{display:block;width:100%;margin-top:4px;padding:12px;font-size:16px;border:1px solid #ccc;border-radius:8px;background:#fff}
+.admin-time-dialog-error{color:#c0392b;font-size:12px;min-height:16px;margin-bottom:8px}
+.admin-time-dialog-actions{display:flex;gap:8px;justify-content:flex-end}
+.admin-time-select{width:100%;padding:12px;font-size:16px;border:1px solid #ccc;border-radius:8px;background:#fff;min-height:44px}
+.admin-time-select:disabled{background:#f0f0f0;color:#999}
 </style>
 </head>
 <body>
@@ -669,6 +678,83 @@ function dispT(t) {
   return h >= 25 ? ('翌' + (h - 24) + ':' + m[2]) : t;
 }
 function dispEnd(start, end) { return dispT(normEnd(start, end)); }
+
+// SHIFT-022: 管理者シフト登録の時刻入力は select（30分刻み）で行う。
+// iPhone/iPadでは text+inputmode=numeric だと数字キーボードになり「:」を入力できないため。
+// 許可範囲はGASの parseShiftMinutes_ と同一にする（開始 0:00-23:30 / 終了 0:00-29:30）。
+// 終了には「状況次第」（FLEX_END_LABEL）も選べる。値と表示は同じ文字列でタイムゾーン変換はしない。
+const ADMIN_TIME_STEP_MIN = 30;
+function adminShiftTimeValues_(kind) {
+  const maxHour = kind === 'end' ? 29 : 23;   // GAS: allowExtended=true が終了のみ
+  const out = [];
+  for (let h = 0; h <= maxHour; h++) {
+    for (let m = 0; m < 60; m += ADMIN_TIME_STEP_MIN) {
+      out.push(String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0'));
+    }
+  }
+  return out;
+}
+// 保存済みの値が30分刻みでない場合も選択肢へ含める（既存データを編集不能にしないため）。
+function buildAdminShiftTimeOptions_(kind, current) {
+  const values = adminShiftTimeValues_(kind);
+  const cur = String(current || '');
+  const isFlex = kind === 'end' && cur === FLEX_END_LABEL;
+  if (cur && !isFlex && values.indexOf(cur) < 0 && /^\d{1,2}:\d{2}$/.test(cur)) values.push(cur);
+  values.sort(function(a,b){ return adminTimeSortKey_(a) - adminTimeSortKey_(b); });
+  const opts = values.map(function(v){ return { value: v, label: dispT(v) }; });
+  if (kind === 'end') opts.push({ value: FLEX_END_LABEL, label: FLEX_END_LABEL });
+  return opts;
+}
+function adminTimeSortKey_(v) {
+  const m = String(v).match(/^(\d{1,2}):(\d{2})$/);
+  return m ? parseInt(m[1],10)*60 + parseInt(m[2],10) : 1e9;
+}
+// select要素を組み立てる。未選択（空）を先頭に置き、保存済み値があればそれを選択する。
+function createAdminShiftTimeSelect_(kind, current, onChange) {
+  const sel = document.createElement('select');
+  sel.className = 'admin-time-select';
+  const ph = document.createElement('option');
+  ph.value = ''; ph.textContent = '時刻を選択'; sel.appendChild(ph);
+  buildAdminShiftTimeOptions_(kind, current).forEach(function(o){
+    const op = document.createElement('option');
+    op.value = o.value; op.textContent = o.label;
+    sel.appendChild(op);
+  });
+  sel.value = current && sel.querySelector('option[value="' + String(current).replace(/"/g,'\\"') + '"]') ? current : '';
+  if (onChange) sel.onchange = function(){ onChange(sel.value); };
+  return sel;
+}
+
+// SHIFT-022: 編集時の時刻入力。prompt はiPhoneで数字キーボードになり「:」を打てないため、
+// select（30分刻み）のダイアログで選ばせる。キャンセル時は null を返す。
+function pickAdminShiftTimes_(curStart, curEnd) {
+  return new Promise(function(resolve){
+    const back=document.createElement('div');back.className='admin-time-dialog-back';
+    const box=document.createElement('div');box.className='admin-time-dialog';
+    const title=document.createElement('div');title.className='admin-time-dialog-title';
+    title.textContent='時間を選択してください';box.appendChild(title);
+    const wrapS=document.createElement('label');wrapS.textContent='開始';
+    const selS=createAdminShiftTimeSelect_('start',curStart);wrapS.appendChild(selS);box.appendChild(wrapS);
+    const wrapE=document.createElement('label');wrapE.textContent='終了';
+    const selE=createAdminShiftTimeSelect_('end',curEnd);wrapE.appendChild(selE);box.appendChild(wrapE);
+    const err=document.createElement('div');err.className='admin-time-dialog-error';box.appendChild(err);
+    const acts=document.createElement('div');acts.className='admin-time-dialog-actions';
+    const cancel=document.createElement('button');cancel.type='button';cancel.className='btn-ghost';cancel.textContent='キャンセル';
+    const ok=document.createElement('button');ok.type='button';ok.className='btn-primary';ok.textContent='決定';
+    acts.appendChild(cancel);acts.appendChild(ok);box.appendChild(acts);
+    back.appendChild(box);document.body.appendChild(back);
+    function close(v){ if(back.parentNode) back.parentNode.removeChild(back); resolve(v); }
+    cancel.onclick=function(){ close(null); };
+    back.onclick=function(e){ if(e.target===back) close(null); };
+    ok.onclick=function(){
+      const st=selS.value, en=selE.value;
+      if(!st){ err.textContent='開始時刻を選択してください。'; return; }
+      if(!en){ err.textContent='終了時刻を選択してください。'; return; }
+      if(en!==FLEX_END_LABEL && st===en){ err.textContent='開始と終了に同じ時刻は指定できません。'; return; }
+      close({ start: st, end: en });
+    };
+  });
+}
 // 「昼の部」設定：駅前店(S002)は土(6)・日(0)に昼営業 11:00〜17:00
 const STORE_DAY_PART = {
   S002: { dows:[0,6], start:['11:00','11:30','12:00','12:30','13:00','13:30','14:00'], end:['15:00','15:30','16:00','16:30','17:00','17:30','18:00'], open:'11:00', close:'17:00' },
@@ -1112,7 +1198,7 @@ function renderAdminEntrySelected() {
     const head=document.createElement('div');head.className='admin-entry-row-head';const strong=document.createElement('strong');strong.textContent=key;head.appendChild(strong);
     const del=document.createElement('button');del.type='button';del.className='btn-del-sel';del.textContent='×';del.onclick=()=>{delete adminEntrySelected[key];renderAdminEntryCalendar();renderAdminEntrySelected();};head.appendChild(del);row.appendChild(head);
     const times=document.createElement('div');times.className='admin-entry-times';
-    [['開始',s.start,'start'],['終了',s.end,'end']].forEach(v=>{const wrap=document.createElement('label');wrap.textContent=v[0];const input=document.createElement('input');input.type='text';input.inputMode='numeric';input.value=v[1];input.placeholder=v[2]==='start'?'19:00':'28:00 / 状況次第';input.oninput=()=>{s[v[2]]=input.value.trim();delete s.error;renderAdminEntrySubmitState();};wrap.appendChild(input);times.appendChild(wrap);});
+    [['開始',s.start,'start'],['終了',s.end,'end']].forEach(v=>{const wrap=document.createElement('label');wrap.textContent=v[0];const sel=createAdminShiftTimeSelect_(v[2]==='start'?'start':'end',v[1],function(val){s[v[2]]=val;delete s.error;renderAdminEntrySubmitState();});sel.disabled=adminEntryBusy;wrap.appendChild(sel);times.appendChild(wrap);});
     row.appendChild(times);const err=document.createElement('div');err.className='admin-entry-error';err.textContent=s.error||'';row.appendChild(err);body.appendChild(row);
   });
   renderAdminEntrySubmitState();
@@ -1171,8 +1257,8 @@ async function editAdminEntryExisting(shift) {
   const newYear=parseInt(dm[1],10),newMonth=parseInt(dm[2],10),newDay=parseInt(dm[3],10);
   const checkDate=new Date(newYear,newMonth-1,newDay);
   if(checkDate.getFullYear()!==newYear||checkDate.getMonth()+1!==newMonth||checkDate.getDate()!==newDay){showAdminEntryStatus('存在しない日付です。',true);return;}
-  const start=prompt('開始時間を入力してください（例 19:00）',shift.start);if(start===null)return;
-  const end=prompt('終了時間を入力してください（例 28:00 / 状況次第）',shift.end);if(end===null)return;
+  const picked=await pickAdminShiftTimes_(shift.start,shift.end);if(!picked)return;
+  const start=picked.start,end=picked.end;
   if(!confirm(currentDate+' の管理者登録を\n'+dateText+' '+start+'〜'+dispEnd(start,end)+' に変更しますか？'))return;
   adminEntryBusy=true;showAdminEntryStatus('変更中です。追加操作をしないでください…',false);
   try{const data=await adminShiftGet({action:'adminUpdateShift',id:shift.id,targetStaffId:adminEntryStaff.id,storeId:adminEntryStore.id,year:newYear,month:newMonth,day:newDay,start:start,end:end,requestId:adminRequestId()});
