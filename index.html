@@ -1136,6 +1136,17 @@ async function adminShiftGet(params, retry, opts) {
   return data;
 }
 
+// ステータス表示はモーダル最上部にあり、登録ボタンは最下部にある。
+// スマホでは押した直後の視界に入らないため、表示のたび視界へ寄せる。
+// .modal が overflow-y:auto のスクロール主体で .modal-overlay は position:fixed のため、
+// block:'nearest' ならモーダル内部だけが動き、背後のページは動かない。
+// 非対応環境・例外時は何もしない（表示自体は成立する）。
+function revealAdminEntryStatus_(el) {
+  if (!el || typeof el.scrollIntoView !== 'function') return false;
+  try { el.scrollIntoView({ block:'nearest', behavior:'smooth' }); return true; }
+  catch (e) { try { el.scrollIntoView(); return true; } catch (e2) { return false; } }
+}
+
 function showAdminEntryStatus(message, isError) {
   const el = document.getElementById('admin-entry-status');
   el.style.display = message ? 'block' : 'none';
@@ -1143,6 +1154,7 @@ function showAdminEntryStatus(message, isError) {
   el.style.background = isError ? '#fff0f0' : '#eef8f1';
   el.style.color = isError ? '#c53030' : '#176b37';
   el.style.border = '1px solid ' + (isError ? '#ffd0d0' : '#bfe7cd');
+  if (message) revealAdminEntryStatus_(el);
 }
 
 // 失敗表示へ付ける詳細。operationId・エラーコード・対象スタッフ・対象日を示す。
@@ -1411,6 +1423,13 @@ function adminTransportMessage_(e){
   return '不明なエラー: '+((e&&e.message)||e);
 }
 
+// 結果確認へ進むときの見出し。打ち切りの事実を1行目に残す。
+function adminTransportHeadline_(e){
+  if(e&&e.gasErrorKind==='TIMEOUT')
+    return '⏱ 通信タイムアウト: '+Math.round(ADMIN_REQUEST_TIMEOUT_MS/1000)+'秒以内に完了しませんでした。';
+  return adminTransportMessage_(e);
+}
+
 // 結果確認の応答から「失敗が確定した」と言い切れる業務エラーだけを列挙する。
 // 再確認しても結果が変わらない入力・権限・対象不在のみ。文言変更で誤判定しても
 // 安全側（保留維持）へ倒れるよう、列挙に当てはまらないものは未確定として扱う。
@@ -1436,10 +1455,17 @@ function adminLooksInProgress_(d, status, code){
 // GASは同じ requestId を受け取ると replayAdminShiftOperation_ で記録済みの結果を返し、
 // 二重登録しない。よって「同じ requestId をもう一度送る」ことが結果確認になる。
 // 新しい requestId を発行しての自動再登録は行わない。
-async function confirmAdminShiftRequest_(){
+// cause を渡すと、打ち切りの事実を消さずに1つのメッセージへ統合する。
+// 別々に showAdminEntryStatus を呼ぶと、この関数の最初の await より前に上書きが起き、
+// 同一同期ブロック内のため打ち切り表示が一度も描画されない。
+async function confirmAdminShiftRequest_(cause){
   const pending=adminEntryPendingRequest;
   if(!pending)return;
-  showAdminEntryStatus('同じ操作ID（'+pending.requestId+'）で登録結果を確認しています…\nもう一度登録しないでください。',false);
+  showAdminEntryStatus(cause
+    ? adminTransportHeadline_(cause)
+      +'\n同じ操作ID（'+pending.requestId+'）で登録結果を確認しています。'
+      +'\n重複を防ぐため、もう一度登録しないでください。'
+    : '同じ操作ID（'+pending.requestId+'）で登録結果を確認しています…\nもう一度登録しないでください。', !!cause);
   let data;
   try{
     data=await adminShiftGet(pending.params,false,ADMIN_TIMEOUT_OPTS);
@@ -1485,10 +1511,18 @@ async function confirmAdminShiftRequest_(){
   adminEntryPendingRequest=null;
   applyAdminCreateSuccessSelection_(data);
   const okDates=(data.saved||[]).map(x=>adminEntryDateKey(x.year,x.month,x.day)).filter(Boolean);
-  showAdminEntryStatus('✅ 前回の登録は完了していました'+(data.replayed?'（同じ操作IDの結果を再取得）':'')+'。重複登録はありません。'
+  const opIds=(data.saved||[]).map(x=>x.operationId).filter(Boolean);
+  // 通常成功と区別する。打ち切りが起きた事実を結果表示にも残す。
+  const head=cause
+    ? (cause.gasErrorKind==='TIMEOUT'
+        ? '✅ 通信はタイムアウトしましたが、同じ操作IDで確認した結果、前回の登録は完了していました。'
+        : '✅ 通信は完了しませんでしたが、同じ操作IDで確認した結果、前回の登録は完了していました。')
+      +'\n重複登録はありません。'
+    : '✅ 前回の登録は完了していました'+(data.replayed?'（同じ操作IDの結果を再取得）':'')+'。重複登録はありません。';
+  showAdminEntryStatus(head
     +'\n登録件数: '+((data.saved||[]).length)+'件'
     +(okDates.length?'\n登録できた日: '+okDates.join('、'):'')
-    +'\n操作ID: '+pending.requestId,false);
+    +'\n操作ID: '+(opIds.length?opIds.join('、'):pending.requestId),false);
 }
 
 // 「登録結果を再確認する」ボタン。新規登録は絶対に行わない。
@@ -1570,8 +1604,9 @@ async function submitAdminShiftEntries() {
   }catch(e){
     if(e&&e.gasErrorKind&&adminEntryPendingRequest){
       // 通信タイムアウト / ネットワーク / HTTP / JSON解析。登録されたか不明なので結果確認へ進む。
-      showAdminEntryStatus(adminTransportMessage_(e)+'\n登録されたかどうか確認します…',true);
-      await confirmAdminShiftRequest_();
+      // 打ち切りの事実は confirmAdminShiftRequest_ が統合メッセージとして表示する。
+      // ここで別に表示すると同一同期ブロックで上書きされ、一度も描画されない。
+      await confirmAdminShiftRequest_(e);
     }else{
       adminEntryPendingRequest=null;
       const d=e.adminResponse;

@@ -50,20 +50,29 @@ function flush() {
 }
 
 // ---------------------------------------------------------------- 擬似DOM
-function makeDoc() {
+// opt.noScrollIntoView=true で scrollIntoView 非対応環境、
+// opt.scrollThrows=true で scrollIntoView が例外を投げる環境を再現する。
+function makeDoc(opt) {
+  const o = opt || {};
   const els = {};
-  const get = id => els[id] || (els[id] = {
+  const reveals = [];
+  const get = id => els[id] || (els[id] = Object.assign({
     id, style: {}, dataset: {}, textContent: '', innerHTML: '', className: '', disabled: false,
     appendChild() {}, classList: { add() {}, remove() {}, toggle() {} }
-  });
-  return { getElementById: get, querySelectorAll: () => [], _els: els };
+  }, o.noScrollIntoView ? {} : {
+    scrollIntoView(arg) {
+      if (o.scrollThrows) throw new TypeError('scrollIntoView is not supported here');
+      reveals.push({ id, arg });
+    }
+  }));
+  return { getElementById: get, querySelectorAll: () => [], _els: els, _reveals: reveals };
 }
 
 // ---------------------------------------------------------------- 環境
 function makeEnv(options) {
   const opt = options || {};
   const clock = makeClock();
-  const doc = makeDoc();
+  const doc = makeDoc(opt);
   const calls = [];           // 送信された1件ごとの {url, params}
   const statuses = [];        // 画面に出た文言
 
@@ -165,7 +174,8 @@ function makeEnv(options) {
     status: () => statuses[statuses.length - 1] || '',
     allStatus: () => statuses.join('\n---\n'),
     submitBtn: () => doc.getElementById('admin-entry-submit'),
-    recheckBtn: () => doc.getElementById('admin-entry-recheck') };
+    recheckBtn: () => doc.getElementById('admin-entry-recheck'),
+    reveals: () => doc._reveals };
 }
 
 const COMPLETED_OK = {
@@ -685,6 +695,109 @@ test('30. 本番のloadAdminEntryExistingは例外を投げず{ok:false}を返�
   assert.strictEqual(settled.ok, false, '失敗を ok:false で返す');
   assert.ok(settled.error && settled.error.gasErrorKind === 'TIMEOUT', 'エラー種別を保持: ' + (settled.error && settled.error.gasErrorKind));
   assert.strictEqual(env.ctx.adminEntryExisting.length, 0, '一覧は空のまま');
+});
+
+// ---------------------------------------------------------------- T3実機で判明した表示問題
+// 打ち切りの事実が、上書きされて一度も描画されないまま消えないこと。
+
+test('31. TIMEOUT→自動確認COMPLETED: 打ち切りの事実が表示履歴に残る', async () => {
+  const env = makeEnv({ responses: [{ kind: 'hang' }, REPLAYED_OK] });
+  const p = env.ctx.submitAdminShiftEntries();
+  await flush();
+  env.clock.tick(30000);
+  await flush();
+  await p;
+
+  const all = env.allStatus();
+  // 3. 表示履歴に3要素が残る
+  assert.ok(/通信タイムアウト/.test(all), '3. 打ち切りの事実: ' + all);
+  assert.ok(/30秒以内に完了しませんでした/.test(all), '3. 30秒であることが分かる: ' + all);
+  assert.ok(/同じ操作ID.*で登録結果を確認しています/.test(all), '3. 同じ操作IDで確認中: ' + all);
+  assert.ok(/通信はタイムアウトしましたが/.test(env.status()), '3. タイムアウト後に完了確認: ' + env.status());
+
+  // 4. 打ち切りと確認中が「1つのメッセージ」に統合され、単独表示で消えない
+  const timeoutOnly = env.statuses.filter(s => /通信タイムアウト/.test(s) && !/確認しています|完了していました/.test(s));
+  assert.strictEqual(timeoutOnly.length, 0, '4. 上書きされる単独TIMEOUT表示が残っている: ' + JSON.stringify(timeoutOnly));
+  const merged = env.statuses.filter(s => /通信タイムアウト/.test(s) && /確認しています/.test(s));
+  assert.strictEqual(merged.length, 1, '4. 統合メッセージが1件であること');
+  assert.strictEqual(env.statuses.length, 3, '4. 表示更新は「登録中→統合確認中→結果」の3回: ' + JSON.stringify(env.statuses.map(s => s.split('\n')[0])));
+
+  // 5/6/7. 同一requestIdのみ・POST2回・新規発行なし
+  assert.strictEqual(env.calls.length, 2, '6. 登録POSTと確認POSTの2回');
+  assert.strictEqual(new Set(env.calls.map(c => c.params.requestId)).size, 1, '5/7. 同一requestIdのみ');
+  assert.ok(env.calls.every(c => c.params.action === 'adminCreateShift'), '5. 同じactionで再送');
+
+  // 8. 二重登録を促すUIにならない
+  assert.ok(!/もう一度登録してください/.test(all), '8. 再登録を促さない');
+  assert.ok(/もう一度登録しないでください/.test(all), '8. 再登録抑止を明示');
+  assert.strictEqual(env.ctx.adminEntryPendingRequest, null, '完了確定で保留解除');
+  assert.strictEqual(env.submitBtn().disabled, true, '8. 同じ内容を再送できる状態にしない');
+  assert.ok(/操作ID: /.test(env.status()), '操作IDを表示');
+  assertRecovered(env, 'TIMEOUT→完了確認');
+});
+
+test('32. ステータス表示のたび視界へ入れる処理が呼ばれる', async () => {
+  const env = makeEnv({ responses: [{ kind: 'hang' }, REPLAYED_OK] });
+  const p = env.ctx.submitAdminShiftEntries();
+  await flush();
+  env.clock.tick(30000);
+  await flush();
+  await p;
+
+  const rv = env.reveals();
+  assert.ok(rv.length >= 3, '9. 表示ごとに呼ばれる（3回以上）: ' + rv.length);
+  assert.ok(rv.every(r => r.id === 'admin-entry-status'), '9. 対象はステータス要素のみ: ' + JSON.stringify(rv.map(r => r.id)));
+  // vmコンテキスト側で生成されるオブジェクトのためプロパティ単位で比較する
+  assert.strictEqual(rv[0].arg && rv[0].arg.block, 'nearest', '9. モーダル外を動かさない block:nearest');
+  assert.strictEqual(rv[0].arg && rv[0].arg.behavior, 'smooth', '9. behavior:smooth で指定される');
+});
+
+test('33. scrollIntoView非対応環境でも例外にならず表示は成立する', async () => {
+  const env = makeEnv({ noScrollIntoView: true, responses: [{ kind: 'hang' }, REPLAYED_OK] });
+  assert.strictEqual(typeof env.doc.getElementById('admin-entry-status').scrollIntoView, 'undefined', '非対応環境である');
+  const p = env.ctx.submitAdminShiftEntries();
+  await flush();
+  env.clock.tick(30000);
+  await flush();
+  await p;
+  assert.ok(/通信はタイムアウトしましたが/.test(env.status()), '10. 表示は成立する: ' + env.status());
+  assert.strictEqual(env.reveals().length, 0, '10. 視界移動は行われない');
+  assertRecovered(env, 'scrollIntoView非対応');
+});
+
+test('34. scrollIntoViewが例外を投げても処理が継続する', async () => {
+  const env = makeEnv({ scrollThrows: true, responses: [{ kind: 'hang' }, REPLAYED_OK] });
+  const p = env.ctx.submitAdminShiftEntries();
+  await flush();
+  env.clock.tick(30000);
+  await flush();
+  await p;
+  assert.ok(/通信はタイムアウトしましたが/.test(env.status()), '10. 例外を吸収して表示は成立: ' + env.status());
+  assertRecovered(env, 'scrollIntoView例外');
+});
+
+test('35. TIMEOUT→確認が処理中/確認もTIMEOUT: 打ち切りを残しpendingと再確認ボタンを維持', async () => {
+  // 11. IN_PROGRESS
+  const busy = makeEnv({ responses: [{ kind: 'hang' },
+    { kind: 'json', json: { ok: false, error: '他のシフト処理が実行中です。完了後にもう一度お試しください。' } }] });
+  let p = busy.ctx.submitAdminShiftEntries();
+  await flush(); busy.clock.tick(30000); await flush(); await p;
+  assert.ok(/通信タイムアウト/.test(busy.allStatus()), '11. 打ち切りの事実が残る');
+  assert.ok(/まだ処理中/.test(busy.status()), '11. 処理中表示: ' + busy.status());
+  assert.ok(busy.ctx.adminEntryPendingRequest, '11. pending保持');
+  assert.strictEqual(busy.recheckBtn().style.display, 'block', '11. 再確認ボタン表示');
+  assert.strictEqual(busy.submitBtn().disabled, true, '11. 新規登録できない');
+  assert.strictEqual(new Set(busy.calls.map(c => c.params.requestId)).size, 1, '11. 同一requestId');
+
+  // 12. 結果確認もTIMEOUT
+  const both = makeEnv({ responses: [{ kind: 'hang' }, { kind: 'hang' }] });
+  p = both.ctx.submitAdminShiftEntries();
+  await flush(); both.clock.tick(30000); await flush(); both.clock.tick(30000); await flush(); await p;
+  assert.ok(/通信タイムアウト/.test(both.allStatus()), '12. 打ち切りの事実が残る');
+  assert.ok(/登録結果不明/.test(both.status()), '12. 結果不明表示: ' + both.status());
+  assert.ok(both.ctx.adminEntryPendingRequest, '12. pending保持');
+  assert.strictEqual(both.recheckBtn().style.display, 'block', '12. 再確認ボタン表示');
+  assert.strictEqual(new Set(both.calls.map(c => c.params.requestId)).size, 1, '12. 同一requestId');
 });
 
 // 画面が戻らない不具合をテスト側でも検出する。実時間5秒で打ち切る。
