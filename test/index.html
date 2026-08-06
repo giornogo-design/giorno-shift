@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="robots" content="noindex,nofollow">
-<title>【テスト】シフト管理</title>
+<title>【本番GAS接続試験】シフト管理</title>
 <link rel="icon" href="../assets/icons/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" sizes="16x16" href="../assets/icons/favicon-16x16.png">
 <link rel="icon" type="image/png" sizes="32x32" href="../assets/icons/favicon-32x32.png">
@@ -268,6 +268,8 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 </style>
 </head>
 <body>
+<!-- 本番GAS接続試験用の識別バナー。表示専用で業務ロジックには関与しない。 -->
+<div id="prodgas-test-banner" style="position:sticky;top:0;z-index:9999;background:#b91c1c;color:#fff;padding:10px 12px;font-size:13px;font-weight:bold;text-align:center;line-height:1.5;letter-spacing:.02em">【本番GAS接続試験】<br>本番シート・本番カレンダーに反映されます</div>
 
 <div id="loading"><div class="spinner"></div><p>読み込み中...</p></div>
 <div id="net-indicator"><span class="mini-spin"></span><span>読み込み中...</span></div>
@@ -635,7 +637,7 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 // 設定
 // ============================================================
 const LIFF_ID       = '2010395925-JfheOL3d';
-const GAS_URL       = 'https://script.google.com/macros/s/AKfycbwzIZtvAIaFSxS0WSzo9iaiT7IMuLjvVyiQT2tUQX7kijHmvR-vL9JhC9TECq-D9zcBSg/exec';
+const GAS_URL       = 'https://script.google.com/macros/s/AKfycbx-aqsCqJuKL1F-eClOgwiZfmIQDfvyVHWXxA8AQJjk5o4TAabhxKQoKTaO9NrOUcec/exec';
 const DOW           = ['日','月','火','水','木','金','土'];
 const START_PRESETS = ['17:00','17:30','18:00','18:30','19:00','19:30','20:00'];
 // 店舗別の開始時間プリセット（片町店は19:00開始 / 刻は16:30開始）
