@@ -1312,11 +1312,15 @@ async function selectAdminEntryStaff(staff) {
 //   { ok:true,  loaded:true  } 再取得して一覧を更新した
 //   { ok:true,  loaded:false } 対象未選択・世代ずれで読み込んでいない（失敗ではない）
 //   { ok:false, error:e }      通信・解析・業務エラーで取得できなかった
-async function loadAdminEntryExisting() {
+// options.keepCurrent=true では取得前に一覧を空にしない。SHIFT-023 の背景同期は、成功直後に
+// 局所描画した行を消してから描き直すと行が一瞬消えて見えるため、この経路だけ現状を保つ。
+// 既定（引数なし）の呼び出しは従来どおり空にしてから取得する。
+async function loadAdminEntryExisting(options) {
+  const keepCurrent=!!(options&&options.keepCurrent);
   const generation=++adminEntryLoadGeneration;
   const expectedStaffId=adminEntryStaff&&adminEntryStaff.id,expectedStoreId=adminEntryStore&&adminEntryStore.id;
   const expectedYear=adminEntryYear,expectedMonth=adminEntryMonth;
-  adminEntryExisting=[]; renderAdminEntryCalendar(); renderAdminEntryExisting();
+  if(!keepCurrent){ adminEntryExisting=[]; renderAdminEntryCalendar(); renderAdminEntryExisting(); }
   if(!adminEntryStaff || !adminEntryStore) return { ok:true, loaded:false };
   try {
     const data=await adminShiftGet({action:'adminGetShiftEntries',targetStaffId:expectedStaffId,storeId:expectedStoreId,year:expectedYear,month:expectedMonth},false,ADMIN_TIMEOUT_OPTS);
@@ -1540,6 +1544,86 @@ function applyAdminCreateSuccessSelection_(data){
   (data.errors||[]).forEach(e=>{if(adminEntrySelected[e.date])adminEntrySelected[e.date].error=e.error;});
 }
 
+// ------------------------------------------------------------
+// SHIFT-023 体感待ち時間の短縮
+// assertAdminShiftSuccess を通った後にだけ成功として扱い、その時点で表示と操作を戻す。
+// 登録済み一覧・確定タブの再取得は背景へ回す。背景同期の成否は、確定済みの成功を
+// 取り消さない。背景同期は新しい登録・削除リクエストを一切送らない。
+// ------------------------------------------------------------
+
+const ADMIN_ENTRY_CREATE_SYNCING='登録しました。一覧を更新しています…';
+const ADMIN_ENTRY_DELETE_SYNCING='削除しました。一覧を更新しています…';
+
+// 計測は既定OFF。?shiftPerf=1 を付けたときだけ記録する。
+// OFFのときは記録先も作らず console へも出さない。表示・通信・順序は計測有無で変わらない。
+const ADMIN_PERF_ENABLED=(function(){
+  try{ return /(?:^|[?&])shiftPerf=1(?:&|$)/.test((window.location&&window.location.search)||''); }
+  catch(e){ return false; }
+})();
+let adminPerfLog_=null;
+function adminPerfMark_(phase){
+  if(!ADMIN_PERF_ENABLED)return;
+  try{
+    const at=(window.performance&&typeof window.performance.now==='function')?window.performance.now():Date.now();
+    if(!adminPerfLog_)adminPerfLog_=[];
+    adminPerfLog_.push({phase:phase,at:at});
+    console.log('[SHIFT-023] '+phase+' '+Math.round(at)+'ms');
+  }catch(e){}
+}
+function adminPerfEntries_(){ return adminPerfLog_?adminPerfLog_.slice():[]; }
+
+// 局所描画。確定済みの成功が描画の失敗で取り消されてはいけないため例外は握る。
+// 背景同期の完了時に同じ描画をやり直すので、表示は最終的にサーバー内容へ収束する。
+function renderAdminEntryLocalViews_(){
+  try{ renderAdminEntryCalendar(); renderAdminEntrySelected(); renderAdminEntryExisting(); }
+  catch(e){}
+}
+
+// 登録が確定した saved を一覧へ暫定的に取り込む。同じidは足さない（重複行を作らない）。
+// 表示中の年月に一致する行だけを対象にする。背景同期でサーバー内容へ置き換わる。
+function mergeAdminEntryLocal_(saved){
+  let added=0;
+  (Array.isArray(saved)?saved:[]).forEach(function(s){
+    if(!s||!s.id)return;
+    if(adminEntryExisting.some(function(x){return x&&x.id===s.id;}))return;
+    if(s.year!==adminEntryYear||s.month!==adminEntryMonth)return;
+    adminEntryExisting.push({id:s.id,year:s.year,month:s.month,day:s.day,
+      start:s.start||'',end:s.end||'',status:s.status||'申請中',
+      source:s.source||'ADMIN',canManage:s.canManage!==false});
+    added++;
+  });
+  return added;
+}
+
+// 削除が確定した行を一覧から外す。取り除いた件数を返す。
+function removeAdminEntryLocal_(id){
+  if(!id)return 0;
+  const before=adminEntryExisting.length;
+  adminEntryExisting=adminEntryExisting.filter(function(s){return !s||s.id!==id;});
+  return before-adminEntryExisting.length;
+}
+
+// 成功確定後の一覧同期。loadAdminEntryExisting と loadConfirmData を並列で1回ずつ実行する。
+// どちらが失敗しても onSettled へ結果を渡すだけで、成功表示は取り消さない。
+// 新しい操作が始まったら古い同期の結果で画面を上書きしない（token で世代を判定する）。
+let adminEntrySyncToken_=null;
+function syncAdminEntryAfterSuccess_(onSettled){
+  const token={};
+  adminEntrySyncToken_=token;
+  adminPerfMark_('background-sync-start');
+  const refetch=loadAdminEntryExisting({keepCurrent:true}).then(
+    function(r){ return r||{ ok:true, loaded:false }; },
+    function(e){ return { ok:false, error:e }; });
+  const confirmSync=withTimeout_(loadConfirmData(),ADMIN_REQUEST_TIMEOUT_MS,'確定タブの再読込が完了しません')
+    .then(function(){ return null; }, function(e){ return e; });
+  return Promise.all([refetch,confirmSync]).then(function(r){
+    adminPerfMark_('background-sync-end');
+    if(adminEntrySyncToken_!==token)return;
+    adminEntrySyncToken_=null;
+    try{ onSettled(r[0],r[1]); }catch(e){}
+  });
+}
+
 async function submitAdminShiftEntries() {
   if(adminEntryBusy||!adminEntryStaff||!adminEntryStore)return;
   // 結果未確定の操作が残っている間は新規登録しない。連打・Enter連打はここで止まる。
@@ -1568,39 +1652,46 @@ async function submitAdminShiftEntries() {
       assertAdminShiftSuccess(data,'登録できませんでした。');
     // ここで登録成功が確定する。以降の再取得の成否は、登録結果の判定に一切影響させない。
     // 選択日をここで解除し、同じ内容がそのまま再送できる状態を残さない。
+    adminPerfMark_('create-success-confirmed');
     applyAdminCreateSuccessSelection_(data);
-    renderAdminEntrySelected();renderAdminEntryCalendar();
+    // 保存された行を一覧へ先に反映し、再取得を待たずに結果を見せる。
+    mergeAdminEntryLocal_(data.saved);
+    renderAdminEntryLocalViews_();
     const okDates=(data.saved||[]).map(x=>adminEntryDateKey(x.year,x.month,x.day)).filter(Boolean);
     const opIds=(data.saved||[]).map(x=>x.operationId).filter(Boolean);
     const idLine='\n操作ID: '+(opIds.length?opIds.join('、'):requestId);
     const head=(data.saved||[]).length+'件を管理者登録しました。'
       +(okDates.length?'\n登録できた日: '+okDates.join('、'):'');
-    // 登録済み一覧の再取得。loadAdminEntryExisting は例外を投げず成否を返すため、
-    // 「取得できなかった」と「取得できたが一致しない」を取り違えないように分岐する。
-    // 通信の失敗は登録の失敗ではない。
-    let note;
-    const refetch=await loadAdminEntryExisting();
-    if(refetch&&refetch.ok===false){
-      note='\n\n⚠️ 登録は完了しましたが、登録済み一覧を再取得できませんでした。'
-        +'\n同じ内容をもう一度登録しないでください。'
-        +'\n画面を開き直して登録済みか確認してください。'
-        +'\n'+adminTransportMessage_(refetch.error)+idLine;
-    }else if(refetch&&refetch.loaded===false){
-      // 対象が切り替わった等で照合していない。一致・不一致のどちらとも言わない。
-      note='\n\n⚠️ 登録は完了しましたが、登録済み一覧との照合は行っていません。'
-        +'\n同じ内容をもう一度登録しないでください。'
-        +'\n画面を開き直して登録済みか確認してください。'+idLine;
-    }else{
-      const ids=new Set(adminEntryExisting.map(s=>s.id));const missing=(data.saved||[]).filter(s=>!ids.has(s.id));
-      note=missing.length
-        ? '\n\n⚠️ 登録は完了しましたが、保存後の再取得結果が一致しませんでした。'
-          +'\n同じ内容をもう一度登録せず、操作IDを控えて管理者へ連絡してください。'+idLine
-        : '\n再取得でも一致しました。';
-    }
-    showAdminEntryStatus(head+note,false);
-    // 確定タブの再読込が滞っても登録結果の表示は妨げない。失敗は握り潰さず追記する。
-    try{ await withTimeout_(loadConfirmData(),ADMIN_REQUEST_TIMEOUT_MS,'確定タブの再読込が完了しません'); }
-    catch(e4){ showAdminEntryStatus(head+note+'\n\n確定タブの再読込にも失敗しました（'+adminTransportMessage_(e4)+'）。画面を開き直してください。',false); }
+    // 成功表示はGASの最終成功判定より後。ここから先は一覧の再取得を待たない。
+    showAdminEntryStatus(head+'\n'+ADMIN_ENTRY_CREATE_SYNCING,false);
+    adminPerfMark_('create-success-shown');
+    // 登録済み一覧と確定タブの再取得は背景で並列に行う。loadAdminEntryExisting は
+    // 例外を投げず成否を返すため、「取得できなかった」と「取得できたが一致しない」を
+    // 取り違えないように分岐する。通信の失敗は登録の失敗ではない。
+    syncAdminEntryAfterSuccess_(function(refetch,confirmError){
+      let note;
+      if(refetch&&refetch.ok===false){
+        note='\n\n⚠️ 登録は完了しましたが、登録済み一覧を再取得できませんでした。'
+          +'\n同じ内容をもう一度登録しないでください。'
+          +'\n画面を開き直して登録済みか確認してください。'
+          +'\n'+adminTransportMessage_(refetch.error)+idLine;
+      }else if(refetch&&refetch.loaded===false){
+        // 対象が切り替わった等で照合していない。一致・不一致のどちらとも言わない。
+        note='\n\n⚠️ 登録は完了しましたが、登録済み一覧との照合は行っていません。'
+          +'\n同じ内容をもう一度登録しないでください。'
+          +'\n画面を開き直して登録済みか確認してください。'+idLine;
+      }else{
+        const ids=new Set(adminEntryExisting.map(s=>s.id));const missing=(data.saved||[]).filter(s=>!ids.has(s.id));
+        note=missing.length
+          ? '\n\n⚠️ 登録は完了しましたが、保存後の再取得結果が一致しませんでした。'
+            +'\n同じ内容をもう一度登録せず、操作IDを控えて管理者へ連絡してください。'+idLine
+          : '\n再取得でも一致しました。';
+      }
+      // 確定タブの再読込が滞っても登録結果の表示は妨げない。失敗は握り潰さず追記する。
+      showAdminEntryStatus(head+note+(confirmError
+        ? '\n\n確定タブの再読込にも失敗しました（'+adminTransportMessage_(confirmError)+'）。画面を開き直してください。'
+        : ''),false);
+    });
   }catch(e){
     if(e&&e.gasErrorKind&&adminEntryPendingRequest){
       // 通信タイムアウト / ネットワーク / HTTP / JSON解析。登録されたか不明なので結果確認へ進む。
@@ -1649,9 +1740,36 @@ async function deleteAdminEntryExisting(shift) {
   if(adminEntryBusy)return;if(!confirm(adminEntryDateKey(shift.year,shift.month,shift.day)+' 出勤 '+shift.start+'／退勤 '+dispEnd(shift.start,shift.end)+' の管理者登録を削除しますか？\nこの操作は取り消せません。'))return;
   adminEntryBusy=true;showAdminEntryStatus('削除中です。追加操作をしないでください…',false);
   try{const data=await adminShiftGet({action:'adminDeleteShift',id:shift.id,targetStaffId:adminEntryStaff.id,requestId:adminRequestId()},false,ADMIN_TIMEOUT_OPTS);
-    assertAdminShiftSuccess(data,'削除できませんでした。');await loadAdminEntryExisting();
-    if(adminEntryExisting.some(s=>s.id===shift.id))throw new Error('削除後も対象シフトが残っています。再操作せず管理者へ連絡してください。');
-    showAdminEntryStatus('削除しました。再取得で0件を確認しました。',false);try{ await withTimeout_(loadConfirmData(),ADMIN_REQUEST_TIMEOUT_MS,'確定タブの再読込が完了しません'); }catch(e5){ showAdminEntryStatus('削除は完了しました。 ただし確定タブの再読込に失敗しました（'+adminTransportMessage_(e5)+'）。画面を開き直してください。',false); }
+    assertAdminShiftSuccess(data,'削除できませんでした。');
+    // ここで削除成功が確定する。以降の再取得の成否は、削除結果の判定に一切影響させない。
+    adminPerfMark_('delete-success-confirmed');
+    removeAdminEntryLocal_(shift.id);
+    renderAdminEntryLocalViews_();
+    showAdminEntryStatus(ADMIN_ENTRY_DELETE_SYNCING,false);
+    adminPerfMark_('delete-success-shown');
+    // 一覧と確定タブの再取得は背景で並列に行う。再取得の失敗で削除成功を取り消さない。
+    syncAdminEntryAfterSuccess_(function(refetch,confirmError){
+      let note,bad=false;
+      if(refetch&&refetch.ok===false){
+        note='削除は完了しましたが、登録済み一覧を再取得できませんでした。'
+          +'\n同じ操作を繰り返さないでください。'
+          +'\n画面を開き直して削除済みか確認してください。'
+          +'\n'+adminTransportMessage_(refetch.error);
+      }else if(refetch&&refetch.loaded===false){
+        note='削除は完了しましたが、登録済み一覧との照合は行っていません。'
+          +'\n画面を開き直して削除済みか確認してください。';
+      }else if(adminEntryExisting.some(s=>s&&s.id===shift.id)){
+        // 削除自体はGASが完了と判定している。取り消さず、不一致だけを警告する。
+        bad=true;
+        note='⚠️ 削除は完了しましたが、再取得後も対象シフトが残っています。'
+          +'\n再操作せず管理者へ連絡してください。';
+      }else{
+        note='削除しました。再取得で0件を確認しました。';
+      }
+      showAdminEntryStatus(note+(confirmError
+        ? '\n\n確定タブの再読込にも失敗しました（'+adminTransportMessage_(confirmError)+'）。画面を開き直してください。'
+        : ''),bad);
+    });
   }catch(e){showAdminEntryStatus(e.adminResponse?e.message:adminTransportMessage_(e),true);}finally{resetAdminEntrySubmitUi_();}
 }
 
