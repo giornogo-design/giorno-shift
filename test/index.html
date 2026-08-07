@@ -896,8 +896,18 @@ function gasFetchJson_(url, init, timeoutMs) {
   );
 }
 
+// SHIFT-023（隔離テストページ専用）: ページURLに ?shiftPerf=1 が付いたときだけ、
+// GASリクエストへも shiftPerf=1 を引き継ぐ。GAS側の perfConfigure_(e) が毎リクエスト
+// これを判定して計測をONにする（既定OFF・素の /exec では常にOFF）。
+// 既存パラメータより「前」に置くため、action・transport・requestId・認証値などを
+// 上書きすることはできない。参照に失敗しても {} を返し、業務通信を壊さない。
+function perfParam_(){
+  try { return ADMIN_PERF_ENABLED ? { shiftPerf:'1' } : {}; }
+  catch (e) { return {}; }
+}
+
 async function gasGet(params, opts) {
-  const url = GAS_URL + '?' + new URLSearchParams(params).toString();
+  const url = GAS_URL + '?' + new URLSearchParams(Object.assign({}, perfParam_(), params)).toString();
   setNet(true);
   try {
     return await gasFetchJson_(url, undefined, opts && opts.timeoutMs);
@@ -909,7 +919,7 @@ async function gasGet(params, opts) {
 async function gasPost(params, opts) {
   setNet(true);
   try {
-    const body = new URLSearchParams(Object.assign({ transport:'adminShift' }, params));
+    const body = new URLSearchParams(Object.assign({ transport:'adminShift' }, perfParam_(), params));
     return await gasFetchJson_(GAS_URL, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'}, body:body.toString() }, opts && opts.timeoutMs);
   } finally { setNet(false); }
 }
