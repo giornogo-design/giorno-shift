@@ -1,0 +1,2801 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="robots" content="noindex,nofollow">
+<title>【SHIFT-023テスト】シフト管理</title>
+<link rel="icon" href="../assets/icons/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="16x16" href="../assets/icons/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/icons/favicon-32x32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="../assets/icons/apple-touch-icon.png">
+<link rel="manifest" href="../manifest.webmanifest">
+<meta name="theme-color" content="#6D4AFF">
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Hiragino Sans', sans-serif; background: #f5f5f5; color: #333; min-height: 100vh; padding-bottom: 70px; }
+
+/* ローディング */
+#loading { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; gap: 16px; }
+.spinner { width: 40px; height: 40px; border: 4px solid #ddd; border-top-color: #06c755; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#loading p { color: #666; font-size: 14px; }
+
+/* 通信中インジケータ（データ取得のたびに表示） */
+#net-indicator { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.78); color: #fff; padding: 7px 16px; border-radius: 18px; font-size: 12px; z-index: 90; display: none; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.25); }
+#net-indicator.show { display: flex; }
+.mini-spin { width: 13px; height: 13px; border: 2px solid rgba(255,255,255,0.35); border-top-color: #fff; border-radius: 50%; animation: spin 0.8s linear infinite; }
+
+/* エラー */
+#error-view { display: none; padding: 40px 20px; text-align: center; }
+#error-msg { color: #e53e3e; font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
+
+/* ヘッダー */
+.header { background: #06c755; color: white; padding: 14px 16px; position: sticky; top: 0; z-index: 20; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+.header h1 { font-size: 17px; font-weight: bold; }
+.header .sub { font-size: 12px; opacity: 0.85; margin-top: 2px; }
+
+/* ボトムナビ */
+.bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; background: white; border-top: 1px solid #e2e8f0; display: flex; z-index: 30; box-shadow: 0 -2px 8px rgba(0,0,0,0.08); }
+.nav-btn { flex: 1; padding: 10px 4px 8px; border: none; background: none; font-size: 10px; color: #999; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 3px; transition: color 0.2s; }
+.nav-btn .icon { font-size: 22px; }
+.nav-btn.active { color: #06c755; }
+
+/* スタッフ情報 */
+.staff-card { background: white; margin: 12px; border-radius: 12px; padding: 12px 16px; display: flex; align-items: center; gap: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+.staff-avatar { width: 40px; height: 40px; background: #06c755; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 20px; flex-shrink: 0; }
+.staff-name { font-weight: bold; font-size: 15px; }
+.staff-sub { font-size: 12px; color: #888; margin-top: 2px; }
+
+/* 店舗タブ */
+.store-tabs { display: flex; margin: 0 12px 8px; gap: 8px; overflow-x: auto; }
+.store-tabs::-webkit-scrollbar { display: none; }
+.store-tab { flex-shrink: 0; padding: 7px 16px; border-radius: 20px; border: 2px solid #ddd; background: white; font-size: 13px; cursor: pointer; transition: all 0.2s; }
+.store-tab.active { background: #06c755; border-color: #06c755; color: white; font-weight: bold; }
+
+/* カレンダー */
+.cal-wrap { margin: 0 12px 12px; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+.cal-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #eee; }
+.cal-header .month-lbl { font-size: 16px; font-weight: bold; }
+.cal-nav { width: 36px; height: 36px; border: none; background: #f0f0f0; border-radius: 50%; font-size: 20px; cursor: pointer; }
+.cal-nav:disabled { opacity: 0.3; cursor: default; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+.cal-dow { text-align: center; padding: 8px 0; font-size: 11px; color: #888; font-weight: bold; border-bottom: 1px solid #eee; }
+.cal-dow:first-child { color: #e53e3e; }
+.cal-dow:last-child  { color: #3182ce; }
+.cal-cell { aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding-top: 4px; cursor: pointer; border-bottom: 1px solid #f5f5f5; border-right: 1px solid #f5f5f5; transition: background 0.15s; }
+.cal-cell:nth-child(7n) { border-right: none; }
+.cal-cell.empty { cursor: default; background: #fafafa; }
+.cal-cell.past, .cal-cell.oor { opacity: 0.35; cursor: not-allowed; }
+.cal-cell.selected { background: #e8faf0; }
+.cal-cell.has-shift { background: #eef5ff; }
+.cal-cell.pending { background: #e8faf0; }
+.cal-cell.short { background: #fff3e0; }
+.cal-cell.today .day-num { background: #06c755; color: white; border-radius: 50%; }
+.day-num { font-size: 13px; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; }
+.cal-cell:nth-child(7n+1) .day-num { color: #e53e3e; }
+.cal-cell:nth-child(7n)   .day-num { color: #3182ce; }
+.shift-badge { font-size: 9px; color: #059c43; font-weight: bold; line-height: 1.1; text-align: center; }
+.shift-exist-badge { font-size: 9px; color: #3182ce; font-weight: bold; line-height: 1.2; text-align: center; white-space: pre; }
+.shift-pending-badge { font-size: 9px; color: #059c43; font-weight: bold; line-height: 1.2; text-align: center; white-space: pre; }
+.short-badge { font-size: 8px; color: #e67e22; font-weight: bold; line-height: 1.2; text-align: center; margin-top: 1px; }
+.cal-cell.dayoff { background: #f0f0f0; }
+.cal-cell.dholiday { background: #ffebee; }
+.cal-cell.dopen { background: #e8faf0; }
+.cal-cell.dmeeting { background: #eef2ff; }
+.day-status { font-size: 9px; font-weight: bold; line-height: 1.2; margin-top: 1px; }
+.day-status.off  { color: #999; }
+.day-status.hol  { color: #e53e3e; }
+.day-status.open { color: #06c755; }
+.day-status.meet { color: #5b6ee1; }
+.days-mode { display: flex; gap: 8px; margin: 0 12px 10px; }
+/* 申請カテゴリ内のサブタブ（申請 / 修正）。UI統合(SHIFT-019)で追加。 */
+.subtabs { display: none; gap: 8px; margin: 0 12px 10px; }
+.subtabs.show { display: flex; }
+.subtab { flex: 1; padding: 9px 0; border-radius: 20px; border: 2px solid #ddd; background: white; font-size: 13px; font-weight: bold; cursor: pointer; }
+.subtab.active { background: #06c755; border-color: #06c755; color: white; }
+/* スタッフタブ（管理者） */
+.staff-row { display: flex; align-items: center; gap: 10px; background: white; border: 1px solid #eee; border-radius: 10px; padding: 11px 12px; margin: 0 12px 8px; }
+.staff-row .nm { font-weight: bold; font-size: 14px; }
+.staff-row .id { font-size: 11px; color: #999; }
+.staff-row .sp { flex: 1; }
+.staff-badge { font-size: 10px; font-weight: bold; padding: 2px 8px; border-radius: 10px; background: #fdebd0; color: #8a4b00; white-space: nowrap; }
+.dmode-btn { flex: 1; padding: 9px 0; border-radius: 20px; border: 2px solid #ddd; background: white; font-size: 13px; font-weight: bold; cursor: pointer; transition: all 0.2s; }
+.dmode-btn.active { background: #5b6ee1; border-color: #5b6ee1; color: white; }
+.dmode-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+/* 凡例 */
+.legend { display: flex; flex-wrap: wrap; gap: 10px; padding: 8px 16px; font-size: 11px; color: #666; border-top: 1px solid #f0f0f0; }
+.legend span { display: inline-flex; align-items: center; gap: 4px; }
+.legend .dot { width: 10px; height: 10px; border-radius: 3px; }
+
+/* 選択リスト */
+.selected-list { margin: 0 12px 12px; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+.section-title { padding: 12px 16px; font-weight: bold; font-size: 14px; color: #555; border-bottom: 1px solid #eee; background: #fafafa; }
+.sel-item { display: flex; align-items: center; padding: 10px 16px; border-bottom: 1px solid #f5f5f5; gap: 10px; }
+.sel-item:last-child { border-bottom: none; }
+.sel-date { font-weight: bold; font-size: 14px; min-width: 64px; }
+.sel-time { font-size: 13px; color: #555; flex: 1; }
+.btn-del-sel { width: 28px; height: 28px; background: #fff0f0; border: none; border-radius: 50%; color: #e53e3e; font-size: 16px; cursor: pointer; }
+.empty-state { padding: 20px 16px; text-align: center; color: #aaa; font-size: 13px; }
+
+/* 送信ボタン */
+.submit-wrap { padding: 0 12px 12px; }
+.btn-submit { width: 100%; padding: 15px; background: #06c755; color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 12px rgba(6,199,85,0.35); }
+.btn-submit:disabled { background: #ccc; box-shadow: none; cursor: not-allowed; }
+
+/* 修正タブ */
+.shift-list { margin: 0 12px 12px; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+.shift-item { padding: 12px 16px; border-bottom: 1px solid #f5f5f5; }
+.shift-item:last-child { border-bottom: none; }
+.shift-item-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.shift-date { font-weight: bold; font-size: 15px; }
+.shift-store { font-size: 12px; background: #e8faf0; color: #059c43; padding: 2px 8px; border-radius: 10px; }
+.shift-time { font-size: 14px; color: #555; }
+.shift-actions { display: flex; gap: 8px; margin-top: 8px; }
+.btn-edit { padding: 6px 14px; border: 2px solid #06c755; background: white; color: #06c755; border-radius: 20px; font-size: 13px; cursor: pointer; }
+.btn-delete { padding: 6px 14px; border: 2px solid #e53e3e; background: white; color: #e53e3e; border-radius: 20px; font-size: 13px; cursor: pointer; }
+
+/* 管理者シフト登録 */
+.staff-picker { margin: 0 12px 12px; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+.staff-pick-item { padding: 14px 16px; border-bottom: 1px solid #f5f5f5; cursor: pointer; display: flex; align-items: center; justify-content: space-between; }
+.staff-pick-item:last-child { border-bottom: none; }
+.staff-pick-item:active { background: #f0f0f0; }
+.staff-pick-name { font-weight: bold; font-size: 15px; }
+.staff-pick-stores { font-size: 12px; color: #888; }
+.staff-pick-arrow { color: #ccc; font-size: 18px; }
+.admin-entry-launch { margin: 0 12px 10px; }
+.admin-entry-field { margin-bottom: 14px; }
+.admin-entry-field label { display:block; font-size:12px; font-weight:bold; color:#666; margin-bottom:6px; }
+.admin-entry-control { width:100%; padding:10px 12px; border:1px solid #d9dde3; border-radius:9px; background:#fff; font-size:15px; }
+.admin-staff-results { max-height:180px; overflow:auto; border:1px solid #e5e7eb; border-radius:10px; }
+.admin-staff-option { display:flex; width:100%; gap:8px; align-items:center; padding:10px 12px; border:0; border-bottom:1px solid #eee; background:#fff; text-align:left; cursor:pointer; }
+.admin-staff-option:last-child { border-bottom:0; }
+.admin-staff-option.selected { background:#e8faf0; box-shadow:inset 3px 0 #06c755; }
+.admin-staff-meta { color:#777; font-size:11px; margin-top:2px; }
+.admin-entry-calendar .cal-cell.selected { background:#d7f5e3; box-shadow:inset 0 0 0 2px #06c755; }
+.admin-entry-calendar .cal-cell.existing { background:#eef5ff; }
+.admin-entry-row { padding:12px; border-bottom:1px solid #eee; }
+.admin-entry-row:last-child { border-bottom:0; }
+.admin-entry-row-head { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+.admin-entry-row-head strong { flex:1; }
+.admin-entry-times { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.admin-entry-times input { width:100%; padding:9px; border:1px solid #d9dde3; border-radius:8px; font-size:14px; }
+.admin-entry-error { color:#c53030; font-size:12px; margin-top:6px; white-space:pre-wrap; }
+.admin-entry-status { display:none; margin:0 0 12px; padding:10px 12px; border-radius:9px; font-size:13px; white-space:pre-wrap; }
+.origin-chip { display:inline-block; margin-left:5px; padding:2px 7px; border-radius:9px; font-size:9px; background:#ede9fe; color:#5b21b6; }
+.origin-chip.self { background:#eef2f7; color:#555; }
+
+/* 月セレクタ */
+.month-select-wrap { margin: 12px; display: flex; align-items: center; justify-content: space-between; background: white; border-radius: 12px; padding: 12px 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+.month-select-lbl { font-weight: bold; font-size: 16px; }
+
+/* 完了画面 */
+#done-view { display: none; padding: 60px 24px; text-align: center; }
+#done-view .check { font-size: 64px; margin-bottom: 16px; }
+#done-view h2 { font-size: 22px; font-weight: bold; margin-bottom: 8px; }
+#done-view p { color: #666; font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
+.btn-back { margin-top: 24px; padding: 13px 32px; background: #06c755; color: white; border: none; border-radius: 24px; font-size: 15px; cursor: pointer; }
+
+/* 確定タブ */
+.cal-cell.has-pending { background: #fff8e1; }
+.cal-cell.all-conf { background: #eef5ff; }
+.confirm-badge { font-size: 9px; font-weight: bold; line-height: 1.25; text-align: center; }
+.confirm-badge .pend { color: #e67e22; }
+.confirm-badge .conf { color: #3182ce; }
+.cf-row { display: flex; align-items: center; gap: 10px; padding: 12px 2px; border-bottom: 1px solid #f0f0f0; }
+.cf-row:last-child { border-bottom: none; }
+.cf-check { width: 22px; height: 22px; flex-shrink: 0; accent-color: #06c755; }
+.cf-info { flex: 1; }
+.cf-name { font-weight: bold; font-size: 15px; }
+.cf-time { font-size: 13px; color: #555; margin-top: 2px; }
+.cf-chip { font-size: 10px; padding: 3px 9px; border-radius: 10px; font-weight: bold; flex-shrink: 0; }
+.cf-chip.pend { background: #fff3e0; color: #e67e22; }
+.cf-chip.conf { background: #eef5ff; color: #3182ce; }
+.cf-undo { flex-shrink: 0; margin-left: 6px; padding: 5px 11px; border: 1px solid #ccc; background: #fff; border-radius: 14px; font-size: 11px; color: #666; cursor: pointer; }
+.cf-edit { flex-shrink: 0; margin-left: 6px; padding: 5px 11px; border: 1px solid #b7dfff; background: #eef7ff; border-radius: 14px; font-size: 11px; color: #2b6cb0; cursor: pointer; }
+.cf-tools { display: flex; gap: 8px; margin: 4px 0 12px; flex-wrap: wrap; }
+.cf-tool-btn { flex: 1 1 44%; min-height: 44px; padding: 9px; border: 2px solid #e2e8f0; background: white; border-radius: 10px; font-size: 13px; cursor: pointer; }
+/* SHIFT-017：削除は破壊的操作なので他ボタンと色を分け、隣接させない（誤タップ防止） */
+.cf-del { flex-shrink: 0; margin-left: 6px; padding: 5px 11px; border: 1px solid #f5c6c6; background: #fff5f5; border-radius: 14px; font-size: 11px; color: #c53030; cursor: pointer; }
+/* SHIFT-017：主要操作（確定/見送り/閉じる）をモーダル下部に固定＝長い一覧でも画面外へ隠れない */
+.cf-sticky { position: sticky; bottom: 0; background: #fff; padding-top: 10px; margin-top: 4px; box-shadow: 0 -6px 12px -6px rgba(0,0,0,0.12); }
+/* SHIFT-017：タップ領域の確保（iOSの誤タップ・二重送信対策） */
+.cf-edit, .cf-undo, .cf-del { min-height: 36px; }
+.cf-check { width: 22px; height: 22px; }
+button:disabled { opacity: .55; cursor: not-allowed; }
+/* SHIFT-017：iPad（縦・横）では下からせり上がるシートではなく中央カードにして高さを使い切る */
+@media (min-width: 768px) {
+  .modal-overlay { align-items: center; justify-content: center; }
+  .modal { max-width: 680px; border-radius: 20px; max-height: 86vh; transform: translateY(20px); }
+  .modal-overlay.show .modal { transform: translateY(0); }
+}
+/* 横向き・低い画面でもモーダル内部でスクロールできるようにする */
+@media (max-height: 500px) {
+  .modal { max-height: 94vh; padding: 16px; }
+}
+
+/* モーダル */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; display: flex; align-items: flex-end; opacity: 0; pointer-events: none; transition: opacity 0.2s; }
+.modal-overlay.show { opacity: 1; pointer-events: all; }
+.modal { background: white; border-radius: 24px 24px 0 0; padding: 24px; width: 100%; max-height: 80vh; overflow-y: auto; transform: translateY(100%); transition: transform 0.3s; }
+.modal-overlay.show .modal { transform: translateY(0); }
+.modal-title { font-size: 17px; font-weight: bold; text-align: center; margin-bottom: 4px; }
+.modal-sub   { font-size: 13px; color: #888; text-align: center; margin-bottom: 20px; }
+.time-section { margin-bottom: 16px; }
+.time-label   { font-size: 12px; color: #888; font-weight: bold; margin-bottom: 8px; }
+.time-presets { display: flex; flex-wrap: wrap; gap: 8px; }
+.time-btn { padding: 8px 14px; border: 2px solid #e2e8f0; border-radius: 20px; background: white; font-size: 14px; cursor: pointer; }
+.time-btn.selected { border-color: #06c755; background: #e8faf0; color: #059c43; font-weight: bold; }
+.time-custom { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.time-custom input { flex: 1; padding: 10px; border: 2px solid #e2e8f0; border-radius: 10px; font-size: 16px; text-align: center; outline: none; }
+.time-custom input:focus { border-color: #06c755; }
+.modal-hr { border: none; border-top: 1px solid #eee; margin: 16px 0; }
+/* 昼/夜トグル */
+.part-toggle { display: flex; gap: 8px; margin-bottom: 18px; }
+.part-btn { flex: 1; padding: 11px; border: 2px solid #e2e8f0; border-radius: 12px; background: white; font-size: 14px; font-weight: bold; color: #888; cursor: pointer; transition: all 0.15s; }
+.part-btn.active { border-color: #06c755; background: #e8faf0; color: #059c43; }
+/* まとめて選択バー */
+.batch-bar { margin: 0 12px 8px; }
+.batch-toggle { width: 100%; padding: 9px; border: 2px dashed #06c755; border-radius: 12px; background: white; color: #059c43; font-size: 13px; font-weight: bold; cursor: pointer; }
+.batch-toggle.active { background: #06c755; border-style: solid; color: white; }
+.batch-tools { margin-top: 8px; padding: 12px; background: white; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+.batch-dows { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12px; color: #888; margin-bottom: 10px; }
+.dow-chip { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 2px solid #e2e8f0; border-radius: 50%; background: white; font-size: 13px; cursor: pointer; }
+.dow-chip.on { border-color: #06c755; background: #e8faf0; color: #059c43; font-weight: bold; }
+.batch-action { display: flex; align-items: center; gap: 8px; }
+.batch-action #batch-count { flex: 1; font-size: 13px; color: #555; font-weight: bold; }
+.batch-action button { padding: 8px 12px; border: none; border-radius: 16px; font-size: 12px; font-weight: bold; cursor: pointer; }
+#batch-apply { background: #06c755; color: white; }
+#batch-apply:disabled { background: #cfcfcf; cursor: not-allowed; }
+#batch-clear { background: #f5f5f5; color: #555; }
+.cal-cell.picked { background: #d7f5e3; box-shadow: inset 0 0 0 2px #06c755; }
+.sel-part { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 8px; margin-right: 6px; }
+.sel-part.day { background: #fff3d6; color: #b8860b; }
+.sel-part.night { background: #e6e9ff; color: #4555c0; }
+.btn-confirm { width: 100%; padding: 14px; background: #06c755; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: bold; cursor: pointer; margin-top: 8px; }
+.btn-cancel  { width: 100%; padding: 12px; background: #f5f5f5; color: #555; border: none; border-radius: 12px; font-size: 15px; cursor: pointer; margin-top: 8px; }
+.admin-time-dialog-back{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px}
+.admin-time-dialog{background:#fff;border-radius:12px;padding:16px;width:100%;max-width:340px;box-shadow:0 8px 24px rgba(0,0,0,.2)}
+.admin-time-dialog-title{font-weight:700;margin-bottom:12px}
+.admin-time-dialog label{display:block;margin-bottom:12px;font-size:13px;color:#555}
+.admin-time-dialog select{display:block;width:100%;margin-top:4px;padding:12px;font-size:16px;border:1px solid #ccc;border-radius:8px;background:#fff}
+.admin-time-dialog-error{color:#c0392b;font-size:12px;min-height:16px;margin-bottom:8px}
+.admin-time-dialog-actions{display:flex;gap:8px;justify-content:flex-end}
+.admin-time-select{width:100%;padding:12px;font-size:16px;border:1px solid #ccc;border-radius:8px;background:#fff;min-height:44px}
+.admin-time-select:disabled{background:#f0f0f0;color:#999}
+</style>
+</head>
+<body>
+<!-- SHIFT-023 隔離テスト用の識別バナー。表示専用で業務ロジックには関与しない。 -->
+<div id="shift023-test-banner" style="position:sticky;top:0;z-index:9999;background:#b45309;color:#fff;padding:10px 12px;font-size:13px;font-weight:bold;text-align:center;line-height:1.5;letter-spacing:.02em">【SHIFT-023テスト環境】<br>テストシート・テストカレンダーに反映されます</div>
+
+<div id="loading"><div class="spinner"></div><p>読み込み中...</p></div>
+<div id="net-indicator"><span class="mini-spin"></span><span>読み込み中...</span></div>
+<div id="error-view"><p id="error-msg"></p><button class="btn-back" onclick="retryLogin()" style="margin-top:20px">再読み込み</button></div>
+
+<div id="app" style="display:none">
+  <!-- ヘッダー -->
+  <div class="header">
+    <h1 id="header-title">📅 シフト管理</h1>
+    <div class="sub" id="header-sub"></div>
+  </div>
+
+  <!-- ① 申請タブ -->
+  <!-- 「申請」カテゴリ内のサブタブ。管理者・スタッフ共通で表示する（SHIFT-019）。 -->
+  <div class="subtabs" id="subtabs">
+    <button class="subtab active" id="sub-apply" onclick="switchTab('apply')">シフト申請</button>
+    <button class="subtab" id="sub-edit" onclick="switchTab('edit')">申請の修正</button>
+  </div>
+
+  <div id="tab-apply">
+    <div class="staff-card">
+      <div class="staff-avatar">👤</div>
+      <div>
+        <div class="staff-name" id="staff-name-lbl"></div>
+        <div class="staff-sub" id="staff-stores-lbl"></div>
+      </div>
+    </div>
+    <div class="store-tabs" id="store-tabs-apply"></div>
+    <div class="batch-bar">
+      <button class="batch-toggle" id="batch-toggle" onclick="toggleMultiMode()">🔁 まとめて選択</button>
+      <div class="batch-tools" id="batch-tools" style="display:none">
+        <div class="batch-dows">
+          毎週:
+          <span class="dow-chip" onclick="pickWeekday(0)">日</span>
+          <span class="dow-chip" onclick="pickWeekday(1)">月</span>
+          <span class="dow-chip" onclick="pickWeekday(2)">火</span>
+          <span class="dow-chip" onclick="pickWeekday(3)">水</span>
+          <span class="dow-chip" onclick="pickWeekday(4)">木</span>
+          <span class="dow-chip" onclick="pickWeekday(5)">金</span>
+          <span class="dow-chip" onclick="pickWeekday(6)">土</span>
+        </div>
+        <div class="batch-action">
+          <span id="batch-count">0日選択中</span>
+          <button id="batch-apply" onclick="openBatchModal()" disabled>時間をまとめて入力</button>
+          <button id="batch-clear" onclick="clearMulti()">クリア</button>
+        </div>
+      </div>
+    </div>
+    <div class="cal-wrap">
+      <div class="cal-header">
+        <button class="cal-nav" id="apply-prev">‹</button>
+        <div class="month-lbl" id="apply-month-lbl"></div>
+        <button class="cal-nav" id="apply-next">›</button>
+      </div>
+      <div class="cal-grid" id="apply-grid">
+        <div class="cal-dow">日</div><div class="cal-dow">月</div><div class="cal-dow">火</div>
+        <div class="cal-dow">水</div><div class="cal-dow">木</div><div class="cal-dow">金</div><div class="cal-dow">土</div>
+      </div>
+      <div class="legend">
+        <span><span class="dot" style="background:#e8faf0;border:1px solid #06c755"></span>申請中</span>
+        <span><span class="dot" style="background:#eef5ff;border:1px solid #3182ce"></span>確定シフト</span>
+        <span><span class="dot" style="background:#fff3e0;border:1px solid #e67e22"></span>人手不足</span>
+      </div>
+    </div>
+    <div class="selected-list">
+      <div class="section-title">✅ 選択済みシフト</div>
+      <div id="apply-selected"><div class="empty-state">日付をタップして追加</div></div>
+    </div>
+    <div class="submit-wrap">
+      <button class="btn-submit" id="apply-submit" disabled>送信する（0件）</button>
+    </div>
+  </div>
+
+  <!-- ② 修正タブ -->
+  <div id="tab-edit" style="display:none">
+    <div class="month-select-wrap">
+      <button class="cal-nav" id="edit-prev">‹</button>
+      <div class="month-select-lbl" id="edit-month-lbl"></div>
+      <button class="cal-nav" id="edit-next">›</button>
+    </div>
+    <div class="shift-list" id="edit-list"><div class="empty-state">読み込み中...</div></div>
+  </div>
+
+  <!-- ④ 営業日設定タブ（管理者） -->
+  <div id="tab-days" style="display:none">
+    <div class="store-tabs" id="store-tabs-days"></div>
+    <div class="days-mode" id="days-mode">
+      <button class="dmode-btn active" id="dmode-normal" onclick="setDaysMode('normal')">休業 / 営業</button>
+      <button class="dmode-btn" id="dmode-meeting" onclick="setDaysMode('meeting')">🧑‍🤝‍🧑 ミーティング</button>
+    </div>
+    <div class="cal-wrap">
+      <div id="days-status" role="status" aria-live="polite" style="display:none;margin:0 0 10px;padding:9px 12px;border-radius:8px;background:#f4f6f8;color:#555;font-size:12px"></div>
+      <div class="cal-header">
+        <button class="cal-nav" id="days-prev">‹</button>
+        <div class="month-lbl" id="days-month-lbl"></div>
+        <button class="cal-nav" id="days-next">›</button>
+      </div>
+      <div class="cal-grid" id="days-grid">
+        <div class="cal-dow">日</div><div class="cal-dow">月</div><div class="cal-dow">火</div>
+        <div class="cal-dow">水</div><div class="cal-dow">木</div><div class="cal-dow">金</div><div class="cal-dow">土</div>
+      </div>
+      <div class="legend">
+        <span><span class="dot" style="background:#f0f0f0;border:1px solid #bbb"></span>定休</span>
+        <span><span class="dot" style="background:#ffebee;border:1px solid #e53e3e"></span>臨時休業</span>
+        <span><span class="dot" style="background:#e8faf0;border:1px solid #06c755"></span>臨時営業</span>
+        <span><span class="dot" style="background:#eef2ff;border:1px solid #5b6ee1"></span>ミーティング</span>
+      </div>
+    </div>
+    <div id="days-help-normal" style="margin:0 12px 16px;padding:14px 16px;background:white;border-radius:12px;font-size:12px;color:#777;line-height:1.8;box-shadow:0 1px 4px rgba(0,0,0,0.08)">
+      日付をタップして切り替えます：<br>
+      ・通常の営業日 → <b style="color:#e53e3e">臨時休業</b><br>
+      ・定休日 → <b style="color:#06c755">臨時営業</b><br>
+      ・設定済みの日 → 元に戻す
+    </div>
+    <div id="days-help-meeting" style="display:none;margin:0 12px 16px;padding:14px 16px;background:white;border-radius:12px;font-size:12px;color:#777;line-height:1.8;box-shadow:0 1px 4px rgba(0,0,0,0.08)">
+      🧑‍🤝‍🧑 <b>ミーティングモード</b>：日付をタップで、その日を<b style="color:#5b6ee1">ミーティング日</b>に設定／解除します。<br>
+      店舗タブで<b>「全体」</b>を選ぶと全店まとめて設定できます。<br>
+      設定するとGoogleカレンダーにも予定が入ります（LINE通知はしません）。
+    </div>
+  </div>
+
+  <!-- ⑤ 確定タブ（管理者） -->
+  <div id="tab-confirm" style="display:none">
+    <div class="store-tabs" id="store-tabs-confirm"></div>
+    <div class="admin-entry-launch">
+      <button class="btn-submit" id="admin-shift-entry-open" type="button">＋ スタッフのシフト登録</button>
+    </div>
+    <!-- SHIFT-017：未処理件数（申請中）。確定未通知バーと並べて上部に固定表示する。 -->
+    <div id="confirm-pending-bar" style="display:none;margin:0 12px 10px;padding:12px 14px;background:#fff3e0;border:1px solid #e67e22;border-radius:12px;align-items:center;gap:10px">
+      <div style="flex:1;font-size:13px;color:#a05a00;line-height:1.5"><b id="confirm-pending-count">0</b>件の申請が未処理です（日付をタップして確定・見送り）</div>
+    </div>
+    <div id="confirm-notify-bar" style="display:none;margin:0 12px 10px;padding:12px 14px;background:#fff8e1;border:1px solid #ffd54f;border-radius:12px;align-items:center;gap:10px">
+      <div style="flex:1;font-size:13px;color:#8a6d00;line-height:1.5"><span id="confirm-notify-store"></span><b id="confirm-notify-count">0</b>件の確定が未通知です</div>
+      <button id="confirm-notify-btn" style="flex-shrink:0;padding:9px 16px;background:#06c755;color:#fff;border:none;border-radius:20px;font-size:13px;font-weight:bold;cursor:pointer">未通知を確認</button>
+    </div>
+    <div class="cal-wrap">
+      <div class="cal-header">
+        <button class="cal-nav" id="confirm-prev">‹</button>
+        <div class="month-lbl" id="confirm-month-lbl"></div>
+        <button class="cal-nav" id="confirm-next">›</button>
+      </div>
+      <div class="cal-grid" id="confirm-grid">
+        <div class="cal-dow">日</div><div class="cal-dow">月</div><div class="cal-dow">火</div>
+        <div class="cal-dow">水</div><div class="cal-dow">木</div><div class="cal-dow">金</div><div class="cal-dow">土</div>
+      </div>
+      <div class="legend">
+        <span><span class="dot" style="background:#fff8e1;border:1px solid #e67e22"></span>申請中あり</span>
+        <span><span class="dot" style="background:#eef5ff;border:1px solid #3182ce"></span>全員確定済み</span>
+      </div>
+    </div>
+    <div style="margin:0 12px 16px;padding:14px 16px;background:white;border-radius:12px;font-size:12px;color:#777;line-height:1.8;box-shadow:0 1px 4px rgba(0,0,0,0.08)">
+      日付をタップ → その日の申請を確認し、確定したい人を選んで「確定」してください。<br>
+      確定すると本人にLINEで通知が届きます。
+    </div>
+  </div>
+</div>
+
+<!-- 完了画面 -->
+<div id="done-view">
+  <div class="check">✅</div>
+  <h2>送信完了！</h2>
+  <p id="done-msg"></p>
+  <button class="btn-back" id="done-back">続ける</button>
+</div>
+
+<!-- ボトムナビ -->
+<!-- ⑤ スタッフタブ（管理者） -->
+<div id="tab-staff" style="display:none">
+  <div style="margin:0 12px 10px">
+    <button class="btn-submit" id="staff-tab-add" style="margin:0">＋ 新規スタッフ登録</button>
+  </div>
+  <div id="staff-tab-list"><div class="empty-state">読み込み中...</div></div>
+</div>
+
+<!-- 下部ナビは4分類（SHIFT-019）。スタッフは「申請」のみ、管理者は4つすべて。
+     内部のタブIDは既存のまま（apply/edit/confirm/days）＝既存処理を書き換えないため。
+     「修正」はナビから外し、申請カテゴリ内のサブタブへ移動した。 -->
+<nav class="bottom-nav" id="bottom-nav" style="display:none">
+  <button class="nav-btn active" id="nav-apply" onclick="switchTab('apply')">
+    <span class="icon">📅</span>申請
+  </button>
+  <button class="nav-btn" id="nav-shift" onclick="switchTab('confirm')" style="display:none">
+    <span class="icon">🗂</span>シフト管理
+  </button>
+  <button class="nav-btn" id="nav-days" onclick="switchTab('days')" style="display:none">
+    <span class="icon">🗓</span>営業設定
+  </button>
+  <button class="nav-btn" id="nav-staff" onclick="switchTab('staff')" style="display:none">
+    <span class="icon">🧑</span>スタッフ
+  </button>
+</nav>
+
+<!-- SHIFT-022 管理者専用シフト登録。空日から独立して開ける。 -->
+<div class="modal-overlay" id="admin-entry-modal">
+  <div class="modal" style="max-width:760px">
+    <div class="modal-title">スタッフのシフト登録</div>
+    <div class="modal-sub">管理者権限で申請済みシフトを登録します。確定・LINE通知は行いません。</div>
+    <div id="admin-entry-status" class="admin-entry-status" role="status" aria-live="polite"></div>
+    <div class="admin-entry-field">
+      <label for="admin-entry-store">1. 店舗</label>
+      <select id="admin-entry-store" class="admin-entry-control"></select>
+    </div>
+    <div class="admin-entry-field">
+      <label for="admin-entry-search">2. スタッフ検索（氏名またはスタッフID）</label>
+      <input id="admin-entry-search" class="admin-entry-control" type="search" autocomplete="off" placeholder="名前の一部を入力">
+      <div id="admin-entry-staff-results" class="admin-staff-results"><div class="empty-state">店舗を選択してください</div></div>
+      <div id="admin-entry-selected-staff" class="admin-entry-error"></div>
+    </div>
+    <div class="admin-entry-field admin-entry-calendar">
+      <label>3. 年月・日付（複数選択可）</label>
+      <div class="cal-wrap" style="margin:0">
+        <div class="cal-header">
+          <button class="cal-nav" id="admin-entry-prev" type="button">‹</button>
+          <div class="month-lbl" id="admin-entry-month"></div>
+          <button class="cal-nav" id="admin-entry-next" type="button">›</button>
+        </div>
+        <div class="cal-grid" id="admin-entry-grid">
+          <div class="cal-dow">日</div><div class="cal-dow">月</div><div class="cal-dow">火</div>
+          <div class="cal-dow">水</div><div class="cal-dow">木</div><div class="cal-dow">金</div><div class="cal-dow">土</div>
+        </div>
+        <div class="legend">
+          <span><span class="dot" style="background:#d7f5e3;border:1px solid #06c755"></span>今回登録</span>
+          <span><span class="dot" style="background:#eef5ff;border:1px solid #3182ce"></span>既存シフト</span>
+        </div>
+      </div>
+    </div>
+    <div class="selected-list" style="margin:0 0 12px">
+      <div class="section-title">4. 登録内容</div>
+      <div id="admin-entry-selected"><div class="empty-state">スタッフと日付を選択してください</div></div>
+    </div>
+    <div class="selected-list" style="margin:0 0 12px">
+      <div class="section-title">既存シフト</div>
+      <div id="admin-entry-existing"><div class="empty-state">スタッフを選択すると表示します</div></div>
+    </div>
+    <button class="btn-confirm" id="admin-entry-submit" type="button" disabled>内容を確認して登録</button>
+    <!-- SHIFT-022 UI復旧: 結果不明のときだけ出す。再登録ではなく同じ操作IDの結果確認を行う。 -->
+    <button class="btn-cancel" id="admin-entry-recheck" type="button" style="display:none">登録結果を再確認する</button>
+    <button class="btn-cancel" id="admin-entry-close" type="button">閉じる</button>
+  </div>
+</div>
+
+<!-- 時間入力モーダル -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <div class="modal-title" id="modal-title"></div>
+    <div class="modal-sub" id="modal-sub"></div>
+    <div class="part-toggle" id="modal-part-toggle" style="display:none">
+      <button type="button" class="part-btn" id="part-day"   onclick="setModalPart('day')">☀️ 昼の部</button>
+      <button type="button" class="part-btn" id="part-night" onclick="setModalPart('night')">🌙 夜の部</button>
+    </div>
+    <div class="time-section">
+      <div class="time-label">▶ 出勤時間</div>
+      <div class="time-presets" id="start-presets"></div>
+      <div class="time-custom"><span style="font-size:12px;color:#888">その他:</span><input type="time" id="start-custom"></div>
+    </div>
+    <hr class="modal-hr">
+    <div class="time-section">
+      <div class="time-label">▶ 退勤時間</div>
+      <div class="time-presets" id="end-presets"></div>
+      <div class="time-custom"><span style="font-size:12px;color:#888">その他:</span><input type="time" id="end-custom"></div>
+    </div>
+    <button class="btn-confirm" id="modal-confirm">この時間で追加</button>
+    <button class="btn-cancel"  id="modal-cancel">キャンセル</button>
+  </div>
+</div>
+
+<!-- 確定モーダル（管理者） -->
+<div class="modal-overlay" id="confirm-modal">
+  <div class="modal">
+    <div class="modal-title" id="confirm-modal-title"></div>
+    <div class="modal-sub" id="confirm-modal-sub"></div>
+    <div class="cf-tools">
+      <button class="cf-tool-btn" onclick="cfSelectAll(true)">申請中をすべて選択</button>
+      <button class="cf-tool-btn" onclick="cfSelectAll(false)">選択を解除</button>
+      <button class="cf-tool-btn" id="cf-proxy-add">＋ スタッフのシフト登録</button>
+      <button class="cf-tool-btn" id="cf-revert-all" onclick="revertAllOfDay()" style="display:none"></button>
+    </div>
+    <div id="confirm-modal-list"></div>
+    <!-- 保存・確定・通知は別ボタン（同じボタンにまとめない） -->
+    <div class="cf-sticky">
+      <button class="btn-confirm" id="confirm-modal-do">選択した0件を確定</button>
+      <button class="btn-cancel"  id="confirm-modal-decline" style="color:#e67e22;border:2px solid #ffd9b0;background:#fff8f0;font-weight:bold">選択した0件を見送り</button>
+      <button class="btn-cancel"  id="confirm-modal-cancel">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- 旧入力画面（後方互換用。SHIFT-022の入口からは使用しない） -->
+<div class="modal-overlay" id="proxy-pick-modal">
+  <div class="modal">
+    <div class="modal-title">登録するスタッフ</div>
+    <div class="modal-sub" id="proxy-pick-sub"></div>
+    <div id="proxy-pick-body"><div class="empty-state">読み込み中...</div></div>
+    <button class="cf-tool-btn" id="staff-add-open" style="width:100%;margin-top:4px">＋ 新規スタッフ登録</button>
+    <button class="btn-cancel" id="proxy-pick-close">キャンセル</button>
+  </div>
+</div>
+
+<!-- 新規スタッフ登録モーダル（管理者・SHIFT-018 最小版） -->
+<!-- 氏名・所属店舗・雇用区分のみ。LINE連携／タイムカード／人件費への登録は行わない。 -->
+<div class="modal-overlay" id="staff-add-modal">
+  <div class="modal">
+    <div class="modal-title">新規スタッフ登録</div>
+    <div class="modal-sub">登録すると管理者シフト登録で選択できます</div>
+    <div class="time-section">
+      <div class="time-label">▶ 氏名</div>
+      <input type="text" id="staff-add-name" maxlength="20" placeholder="例：山田花子"
+             style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:15px;box-sizing:border-box">
+    </div>
+    <div class="time-section">
+      <div class="time-label">▶ 所属店舗</div>
+      <select id="staff-add-store"
+              style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:15px;background:#fff;box-sizing:border-box"></select>
+    </div>
+    <div class="time-section">
+      <div class="time-label">▶ 雇用区分</div>
+      <select id="staff-add-emp"
+              style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:15px;background:#fff;box-sizing:border-box">
+        <option value="アルバイト">アルバイト</option>
+        <option value="社員">社員</option>
+      </select>
+    </div>
+    <div style="margin:4px 0 12px;font-size:11px;color:#888;line-height:1.7">
+      ※ LINE連携・タイムカード・給与システムへの登録は別途必要です。<br>
+      ※ シフト確定のLINE通知は、本人がLINEで「登録」するまで届きません。
+    </div>
+    <div id="staff-add-msg" style="display:none;margin-bottom:10px;padding:10px 12px;border-radius:8px;font-size:13px;line-height:1.6;white-space:pre-wrap"></div>
+    <button class="btn-confirm" id="staff-add-do">この内容で登録</button>
+    <button class="btn-cancel"  id="staff-add-cancel">キャンセル</button>
+  </div>
+</div>
+
+<!-- 未通知リストモーダル（管理者） -->
+<div class="modal-overlay" id="notify-list-modal">
+  <div class="modal">
+    <div class="modal-title">未通知の確定シフト</div>
+    <div class="modal-sub" id="notify-list-sub"></div>
+    <div id="notify-list-body"></div>
+    <button class="btn-cancel"  id="notify-list-close">閉じる</button>
+  </div>
+</div>
+
+<!-- 修正モーダル -->
+<div class="modal-overlay" id="edit-modal">
+  <div class="modal">
+    <div class="modal-title" id="edit-modal-title">時間を変更</div>
+    <div class="time-section">
+      <div class="time-label">▶ 開始時間</div>
+      <div class="time-presets" id="edit-start-presets"></div>
+      <div class="time-custom"><span style="font-size:12px;color:#888">その他:</span><input type="time" id="edit-start-custom"></div>
+    </div>
+    <hr class="modal-hr">
+    <div class="time-section">
+      <div class="time-label">▶ 終了時間</div>
+      <div class="time-presets" id="edit-end-presets"></div>
+      <div class="time-custom"><span style="font-size:12px;color:#888">その他:</span><input type="time" id="edit-end-custom"></div>
+    </div>
+    <button class="btn-confirm" id="edit-modal-confirm">変更を保存</button>
+    <button class="btn-cancel"  id="edit-modal-cancel">キャンセル</button>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// 設定
+// ============================================================
+const LIFF_ID       = '2010395925-JfheOL3d';
+const GAS_URL       = 'https://script.google.com/macros/s/AKfycbymM41DfFXoMjzzQ1Hd7DPzvKYtmg339ONCO4D6iFUyy5ZgrN2Wv_9JRPyBaFe7OP6Okg/exec';
+const DOW           = ['日','月','火','水','木','金','土'];
+const START_PRESETS = ['17:00','17:30','18:00','18:30','19:00','19:30','20:00'];
+// 店舗別の開始時間プリセット（片町店は19:00開始 / 刻は16:30開始）
+const STORE_START_PRESETS = {
+  S001:['19:00','19:30','20:00','20:30','21:00','21:30','22:00'],
+  S003:['16:30','17:00','17:30','18:00','18:30','19:00'],
+};
+function startPresetsFor(storeId) { return STORE_START_PRESETS[storeId] || START_PRESETS; }
+const END_PRESETS   = ['21:00','22:00','23:00','24:00','25:00','26:00','27:00'];
+const STORE_NAME    = { S001:'片町店', S002:'駅前店', S003:'刻' };
+const STORE_OPEN    = { S001:'19:00', S002:'18:00', S003:'16:30' };
+const STORE_CLOSE   = { S001:'04:00', S002:'01:00', S003:'23:00' };
+// 「ラスト」を押したときに入る時刻（片付け後に退勤＝各店の実際の終わり）
+// 内部標準は24時超え表記（4:00ではなく28:00）。表示はdispT/dispEndで「翌4:00」に変換する
+const STORE_LAST = { S001:'28:00', S002:'25:00', S003:'23:30' };
+// 「状況次第」＝店内・予約・片付け・責任者判断で退勤する勤務条件（固定退勤時刻なし）。時刻ではないセンチネル。
+const FLEX_END_LABEL = '状況次第';
+// 終了プリセット：通常の時間帯＋「ラスト」＋「状況次第」（ラストと状況次第は別の選択肢として両方出す）
+function endPresetsFor(storeId) { return END_PRESETS.concat([{ label:'ラスト', value: STORE_LAST[storeId] || STORE_CLOSE[storeId] || '24:00' }, { label: FLEX_END_LABEL, value: FLEX_END_LABEL }]); }
+
+// ---- 深夜時刻の内部標準（25:00形式）と表示用（翌1:00形式） ----
+// 終了が開始以前（19:00-1:00等）は翌日扱いで+24して吸収する
+function normEnd(start, end) {
+  if (!end) return end;
+  if (end === FLEX_END_LABEL) return end;   // 「状況次第」は時刻ではないので正規化しない
+  const em = String(end).match(/^(\d{1,2}):(\d{2})$/);
+  if (!em) return end;
+  let eh = parseInt(em[1], 10);
+  const sm = String(start || '').match(/^(\d{1,2}):(\d{2})$/);
+  if (sm && eh < 24) {
+    const sMin = parseInt(sm[1], 10) * 60 + parseInt(sm[2], 10);
+    const eMin = eh * 60 + parseInt(em[2], 10);
+    if (eMin <= sMin) eh += 24;
+  }
+  return eh + ':' + em[2];
+}
+// 25:00以降を「翌1:00」表記に（スタッフが見る場所は必ずこちらを通す。24:00はそのまま）
+function dispT(t) {
+  if (t === FLEX_END_LABEL) return t;   // 「状況次第」はそのまま表示
+  const m = String(t || '').match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return t;
+  const h = parseInt(m[1], 10);
+  return h >= 25 ? ('翌' + (h - 24) + ':' + m[2]) : t;
+}
+function dispEnd(start, end) { return dispT(normEnd(start, end)); }
+
+// SHIFT-022: 管理者シフト登録の時刻入力は select（30分刻み）で行う。
+// iPhone/iPadでは text+inputmode=numeric だと数字キーボードになり「:」を入力できないため。
+// 許可範囲はGASの parseShiftMinutes_ と同一にする（開始 0:00-23:30 / 終了 0:00-29:30）。
+// 終了には「状況次第」（FLEX_END_LABEL）も選べる。値と表示は同じ文字列でタイムゾーン変換はしない。
+const ADMIN_TIME_STEP_MIN = 30;
+function adminShiftTimeValues_(kind) {
+  const maxHour = kind === 'end' ? 29 : 23;   // GAS: allowExtended=true が終了のみ
+  const out = [];
+  for (let h = 0; h <= maxHour; h++) {
+    for (let m = 0; m < 60; m += ADMIN_TIME_STEP_MIN) {
+      out.push(String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0'));
+    }
+  }
+  return out;
+}
+// 保存済みの値が30分刻みでない場合も選択肢へ含める（既存データを編集不能にしないため）。
+function buildAdminShiftTimeOptions_(kind, current, storeId) {
+  const values = adminShiftTimeValues_(kind);
+  const cur = String(current || '');
+  const isFlex = kind === 'end' && cur === FLEX_END_LABEL;
+  if (cur && !isFlex && values.indexOf(cur) < 0 && /^\d{1,2}:\d{2}$/.test(cur)) values.push(cur);
+  values.sort(function(a,b){ return adminTimeSortKey_(a) - adminTimeSortKey_(b); });
+  const opts = values.map(function(v){ return { value: v, label: dispT(v) }; });
+  if (kind === 'end') {
+    // 「状況次第」＝退勤時刻を決めない勤務条件（時刻ではないセンチネル）。
+    // 「ラスト」＝閉店・片付けまで＝店舗ごとの実際の終わり時刻。本人申請の endPresetsFor と同じ保存値を使う。
+    // 両者は保存値が異なるため、あとから区別できる。
+    opts.push({ value: FLEX_END_LABEL, label: FLEX_END_LABEL });
+    const lastValue = adminShiftLastValue_(storeId);
+    if (lastValue) opts.push({ value: lastValue, label: 'ラスト（' + dispT(lastValue) + '）' });
+  }
+  return opts;
+}
+// 「ラスト」の保存値。本人申請UI（endPresetsFor）と同一の店舗別時刻を返す。
+function adminShiftLastValue_(storeId) {
+  const id = storeId || (typeof adminEntryStore !== 'undefined' && adminEntryStore ? adminEntryStore.id : '');
+  if (!id) return '';
+  return STORE_LAST[id] || STORE_CLOSE[id] || '';
+}
+function adminTimeSortKey_(v) {
+  const m = String(v).match(/^(\d{1,2}):(\d{2})$/);
+  return m ? parseInt(m[1],10)*60 + parseInt(m[2],10) : 1e9;
+}
+// select要素を組み立てる。未選択（空）を先頭に置き、保存済み値があればそれを選択する。
+function createAdminShiftTimeSelect_(kind, current, onChange, storeId) {
+  const sel = document.createElement('select');
+  sel.className = 'admin-time-select';
+  const ph = document.createElement('option');
+  ph.value = ''; ph.textContent = '時刻を選択'; sel.appendChild(ph);
+  buildAdminShiftTimeOptions_(kind, current, storeId).forEach(function(o){
+    const op = document.createElement('option');
+    op.value = o.value; op.textContent = o.label;
+    sel.appendChild(op);
+  });
+  sel.value = current && sel.querySelector('option[value="' + String(current).replace(/"/g,'\\"') + '"]') ? current : '';
+  if (onChange) sel.onchange = function(){ onChange(sel.value); };
+  return sel;
+}
+
+// SHIFT-022: 編集時の時刻入力。prompt はiPhoneで数字キーボードになり「:」を打てないため、
+// select（30分刻み）のダイアログで選ばせる。キャンセル時は null を返す。
+function pickAdminShiftTimes_(curStart, curEnd) {
+  return new Promise(function(resolve){
+    const back=document.createElement('div');back.className='admin-time-dialog-back';
+    const box=document.createElement('div');box.className='admin-time-dialog';
+    const title=document.createElement('div');title.className='admin-time-dialog-title';
+    title.textContent='出勤・退勤を選択してください';box.appendChild(title);
+    const wrapS=document.createElement('label');wrapS.textContent='出勤';
+    const selS=createAdminShiftTimeSelect_('start',curStart);wrapS.appendChild(selS);box.appendChild(wrapS);
+    const wrapE=document.createElement('label');wrapE.textContent='退勤';
+    const selE=createAdminShiftTimeSelect_('end',curEnd);wrapE.appendChild(selE);box.appendChild(wrapE);
+    const err=document.createElement('div');err.className='admin-time-dialog-error';box.appendChild(err);
+    const acts=document.createElement('div');acts.className='admin-time-dialog-actions';
+    const cancel=document.createElement('button');cancel.type='button';cancel.className='btn-ghost';cancel.textContent='キャンセル';
+    const ok=document.createElement('button');ok.type='button';ok.className='btn-primary';ok.textContent='決定';
+    acts.appendChild(cancel);acts.appendChild(ok);box.appendChild(acts);
+    back.appendChild(box);document.body.appendChild(back);
+    function close(v){ if(back.parentNode) back.parentNode.removeChild(back); resolve(v); }
+    cancel.onclick=function(){ close(null); };
+    back.onclick=function(e){ if(e.target===back) close(null); };
+    ok.onclick=function(){
+      const st=selS.value, en=selE.value;
+      if(!st){ err.textContent='出勤時刻を選択してください。'; return; }
+      if(!en){ err.textContent='退勤時刻を選択してください。'; return; }
+      if(en!==FLEX_END_LABEL && st===en){ err.textContent='出勤と退勤に同じ時刻は指定できません。'; return; }
+      close({ start: st, end: en });
+    };
+  });
+}
+// 「昼の部」設定：駅前店(S002)は土(6)・日(0)に昼営業 11:00〜17:00
+const STORE_DAY_PART = {
+  S002: { dows:[0,6], start:['11:00','11:30','12:00','12:30','13:00','13:30','14:00'], end:['15:00','15:30','16:00','16:30','17:00','17:30','18:00'], open:'11:00', close:'17:00' },
+};
+function dayPartFor(storeId, dow) { const c = STORE_DAY_PART[storeId]; return (c && c.dows.indexOf(dow) >= 0) ? c : null; }
+
+// ============================================================
+// 状態
+// ============================================================
+let lineId = null, staffData = null;
+let adminShiftToken = null, adminShiftSessionPromise = null;
+let adminEntryStore = null, adminEntryStaff = null;
+let adminEntryYear = new Date().getFullYear(), adminEntryMonth = new Date().getMonth()+1;
+let adminEntryStaffList = [], adminEntrySelected = {}, adminEntryExisting = [], adminEntryBusy = false;
+// SHIFT-022 UI復旧: 結果が確定していない登録操作。requestId を保持し、再登録ではなく結果確認に使う。
+let adminEntryPendingRequest = null;
+let adminEntryLoadGeneration = 0;
+let applyStore = null, applyMonth = new Date().getMonth()+1, applyYear = new Date().getFullYear();
+let applySelected = {}, applyExisting = {}, applyShortage = {};
+let multiMode = false, multiPicked = {};                 // まとめて選択モード
+let pendingPart = null, modalStore = null, modalDate = null; // 昼/夜トグル用
+let editMonth = new Date().getMonth()+1, editYear = new Date().getFullYear();
+let editShifts = [], editingShift = null, editMode = 'self', editInitial = null;
+let daysStore = null, daysMonth = new Date().getMonth()+1, daysYear = new Date().getFullYear();
+let daysFixedOff = [], daysHolidays = new Set(), daysOpens = new Set(), daysMeetings = new Set();
+let daysMode = 'normal';   // 'normal'（休業/営業）| 'meeting'（ミーティング日）
+let daysReady = false, daysMutating = false, daysLoadGeneration = 0;
+let confirmStore = null, confirmMonth = new Date().getMonth()+1, confirmYear = new Date().getFullYear();
+let proxyAddTarget = null;   // SHIFT-017：統合モーダルの代理追加で選んだスタッフ（画面内のみ・保存しない）
+let confirmPending = 0;      // SHIFT-017：当月の申請中件数（バッジ表示用）
+let confirmDays = {}, confirmDayKey = null, confirmPendingNotify = 0;
+let pendingDate = null, pendingMode = null;
+
+// ============================================================
+// GAS通信
+// ============================================================
+let netCount = 0;
+function setNet(on) {
+  netCount = Math.max(0, netCount + (on ? 1 : -1));
+  document.getElementById('net-indicator').classList.toggle('show', netCount > 0);
+}
+// SHIFT-022 UI復旧: 管理者操作の通信打ち切り時間。GAS側のロック待ち(30秒)と揃える。
+const ADMIN_REQUEST_TIMEOUT_MS = 30000;
+const ADMIN_TIMEOUT_OPTS = { timeoutMs: ADMIN_REQUEST_TIMEOUT_MS };
+
+// 失敗の種類を呼び出し側で区別できるようにする。
+// TIMEOUT / NETWORK / HTTP / PARSE のいずれかを gasErrorKind に入れる。
+function gasError_(kind, message, extra) {
+  const e = new Error(message);
+  e.gasErrorKind = kind;
+  if (extra) Object.assign(e, extra);
+  return e;
+}
+
+// 打ち切り後に遅れて届いた結果の記録。画面へは反映しない。
+function logLateResponse_(what, url) {
+  try { if (typeof console !== 'undefined' && console.warn) console.warn('[SHIFT-022] ' + what + ' url=' + url); } catch (e) {}
+}
+
+// abort由来のエラーかどうか。ブラウザ実装差を吸収する。
+function isAbortError_(e) {
+  return !!e && (e.gasErrorKind === 'ABORTED' || e.name === 'AbortError' || e.code === 20);
+}
+
+// 1回の通信と応答本体の読み取り。失敗は種類ごとに型付けして投げる。
+async function gasRequestJson_(url, init) {
+  let res, text;
+  try {
+    res = await fetch(url, init);
+  } catch (e) {
+    if (e && e.gasErrorKind) throw e;
+    if (e && e.name === 'AbortError') throw gasError_('ABORTED', '通信を打ち切りました');
+    throw gasError_('NETWORK', 'ネットワークに接続できません: ' + ((e && e.message) || e));
+  }
+  if (!res.ok) throw gasError_('HTTP', `通信エラー（HTTP ${res.status}）`, { httpStatus: res.status });
+  try {
+    text = await res.text();
+  } catch (e) {
+    if (e && e.name === 'AbortError') throw gasError_('ABORTED', '通信を打ち切りました');
+    throw gasError_('NETWORK', '応答の受信に失敗しました: ' + ((e && e.message) || e));
+  }
+  try { return JSON.parse(text); } catch(e) { throw gasError_('PARSE', 'GAS応答エラー: ' + text.slice(0,100)); }
+}
+
+// fetch は応答が返らない限り解決も棄却もしない。timeoutMs を渡した場合は
+// AbortController の有無にかかわらず Promise.race の論理タイムアウトで必ず呼出元へ戻す。
+// AbortController があるときは通信自体も abort する（無いときは通信は残るがUIは復旧する）。
+function gasFetchJson_(url, init, timeoutMs) {
+  if (!timeoutMs) return gasRequestJson_(url, init);
+  const ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
+  const work = gasRequestJson_(url, ctrl ? Object.assign({}, init || {}, { signal: ctrl.signal }) : init);
+  let timer = null, finished = false, timedOut = false;
+  const timeoutError = function(){
+    return gasError_('TIMEOUT', `応答がありません（${Math.round(timeoutMs/1000)}秒で打ち切りました）`);
+  };
+  const timeout = new Promise(function(_, reject){
+    timer = setTimeout(function(){
+      // 順序が重要。abort() を先に呼ぶと、abort由来の AbortError が
+      // TIMEOUT より先に Promise.race を確定させる余地が残る。
+      timedOut = true;                                    // 1. 打ち切り確定を記録
+      reject(timeoutError());                             // 2. TIMEOUTでraceを確定
+      if (ctrl) { try { ctrl.abort(); } catch (e) {} }     // 3. 対応環境のみ通信も中断
+    }, timeoutMs);
+  });
+  // 安全性は Promise.race の性質で成立している。race 確定後に work が settle しても
+  // その結果は呼出元の画面処理へは戻らず、race が work にハンドラを張るため未処理例外にもならない。
+  // 以下の追加ハンドラは遅延応答を console へ記録する診断目的で、安全性はこれに依存しない。
+  work.then(
+    function(){ if (finished) logLateResponse_('打ち切り後に遅れて成功した応答を破棄', url); },
+    function(e){ if (finished) logLateResponse_('打ち切り後に遅れて失敗した通信を破棄: ' + ((e && e.message) || e), url); }
+  );
+  const release = function(){ finished = true; if (timer) { clearTimeout(timer); timer = null; } };
+  return Promise.race([work, timeout]).then(
+    function(v){ release(); return v; },
+    function(e){
+      release();
+      // 実装差でabort由来のエラーが先に表面化した場合も、30秒経過後は必ずTIMEOUTとして返す。
+      if (timedOut && isAbortError_(e)) throw timeoutError();
+      throw e;
+    }
+  );
+}
+
+async function gasGet(params, opts) {
+  const url = GAS_URL + '?' + new URLSearchParams(params).toString();
+  setNet(true);
+  try {
+    return await gasFetchJson_(url, undefined, opts && opts.timeoutMs);
+  } finally {
+    setNet(false);
+  }
+}
+
+async function gasPost(params, opts) {
+  setNet(true);
+  try {
+    const body = new URLSearchParams(Object.assign({ transport:'adminShift' }, params));
+    return await gasFetchJson_(GAS_URL, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'}, body:body.toString() }, opts && opts.timeoutMs);
+  } finally { setNet(false); }
+}
+
+// 応答は返るが後続処理が終わらない場合にも画面を戻すための時間制限。
+// 打ち切り後に遅れて settle しても呼出元へは渡さず、未処理例外にもしない。
+function withTimeout_(promise, ms, label) {
+  let timer = null, finished = false;
+  const timeout = new Promise(function(_, reject){
+    timer = setTimeout(function(){ reject(gasError_('TIMEOUT', label)); }, ms);
+  });
+  // gasFetchJson_ と同じ。安全性は Promise.race が担い、以下は診断ログ用。
+  promise.then(
+    function(){ if (finished) logLateResponse_('打ち切り後に完了した後続処理を破棄', label); },
+    function(e){ if (finished) logLateResponse_('打ち切り後に失敗した後続処理を破棄: ' + ((e && e.message) || e), label); }
+  );
+  const release = function(){ finished = true; if (timer) { clearTimeout(timer); timer = null; } };
+  return Promise.race([promise, timeout]).then(
+    function(v){ release(); return v; },
+    function(e){ release(); throw e; }
+  );
+}
+
+// ============================================================
+// 認証（LIFF）
+// ============================================================
+async function init() {
+  try {
+    await liff.init({ liffId: LIFF_ID });
+    if (!liff.isLoggedIn()) { liff.login(); return; }
+    const profile = await liff.getProfile();
+    lineId = profile.userId;
+    await loadStaff();
+  } catch(e) {
+    showError('読み込みに失敗しました。LINEアプリを再起動して試してください。\n\n' + e.message);
+  }
+}
+
+async function loadStaff() {
+  try {
+    const data = await gasGet({ action:'getStaff', lineId });
+    if (!data.ok) { showError(data.error); return; }
+    staffData = data;
+    setupApp();
+  } catch(e) { showError('スタッフ情報エラー: ' + e.message); }
+}
+
+function retryLogin() { location.reload(); }
+
+function showError(msg) {
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('error-view').style.display = 'block';
+  document.getElementById('error-msg').textContent = msg;
+}
+
+// ============================================================
+// アプリ起動
+// ============================================================
+function setupApp() {
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('app').style.display     = 'block';
+  document.getElementById('bottom-nav').style.display = 'flex';
+  document.getElementById('staff-name-lbl').textContent   = staffData.name + 'さん';
+  document.getElementById('staff-stores-lbl').textContent = '担当: ' + staffData.stores.map(s=>s.name).join(' / ');
+  // SHIFT-019：画面はこのindex.html 1本に統一。ナビは4分類。
+  //   申請（申請＋修正のサブタブ）／シフト管理／営業設定／スタッフ
+  // スタッフは「申請」のみ。管理者は4つすべて＝管理者も自分の申請・修正ができる
+  // （SHIFT-017で管理者から申請・修正を隠していた処理は廃止した）。
+  if (staffData.isAdmin) {
+    document.getElementById('nav-shift').style.display = 'flex';
+    document.getElementById('nav-days').style.display  = 'flex';
+    document.getElementById('nav-staff').style.display = 'flex';
+    document.getElementById('staff-tab-add').onclick          = openStaffAdd;
+    document.getElementById('confirm-modal-do').onclick      = doConfirm;
+    document.getElementById('confirm-modal-decline').onclick = doDecline;
+    document.getElementById('confirm-modal-cancel').onclick  = () => document.getElementById('confirm-modal').classList.remove('show');
+    document.getElementById('confirm-notify-btn').onclick    = openNotifyList;
+    document.getElementById('notify-list-close').onclick     = () => document.getElementById('notify-list-modal').classList.remove('show');
+    document.getElementById('admin-shift-entry-open').onclick = () => openAdminShiftEntry();
+    document.getElementById('cf-proxy-add').onclick          = () => openAdminShiftEntry(confirmDayKey);
+    document.getElementById('admin-entry-close').onclick     = closeAdminShiftEntry;
+    document.getElementById('admin-entry-store').onchange   = onAdminEntryStoreChanged;
+    document.getElementById('admin-entry-search').oninput   = renderAdminEntryStaff;
+    document.getElementById('admin-entry-prev').onclick     = () => moveAdminEntryMonth(-1);
+    document.getElementById('admin-entry-next').onclick     = () => moveAdminEntryMonth(1);
+    document.getElementById('admin-entry-submit').onclick   = submitAdminShiftEntries;
+    document.getElementById('admin-entry-recheck').onclick  = recheckAdminShiftRequest;
+    document.getElementById('proxy-pick-close').onclick      = () => { document.getElementById('proxy-pick-modal').classList.remove('show'); if (confirmDayKey) openConfirmModal(confirmDayKey); };
+    // 新規スタッフ登録（SHIFT-018）：代理入力のスタッフ選択から開く
+    document.getElementById('staff-add-open').onclick        = openStaffAdd;
+    document.getElementById('staff-add-do').onclick          = submitStaffAdd;
+    document.getElementById('staff-add-cancel').onclick      = () => closeStaffAdd(true);
+  }
+
+  document.getElementById('apply-submit').onclick = submitApply;
+  document.getElementById('modal-confirm').onclick = confirmTime;
+  document.getElementById('modal-cancel').onclick  = closeModal;
+  document.getElementById('start-custom').oninput  = () => clearPresets('start');
+  document.getElementById('end-custom').oninput    = () => clearPresets('end');
+  document.getElementById('edit-modal-confirm').onclick = saveEditTime;
+  document.getElementById('edit-modal-cancel').onclick  = closeEditModal;
+  document.getElementById('done-back').onclick = () => {
+    document.getElementById('done-view').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    document.getElementById('bottom-nav').style.display = 'flex';
+    // 代理登録の直後だけシフト管理へ戻す。管理者が「自分の申請」をした場合は申請画面へ戻す
+    // （SHIFT-019：管理者も申請できるようになったため、isAdminだけで分岐しない）。
+    if (pendingMode === 'proxyAdd') { loadConfirmData(); switchTab('confirm'); }
+    else if (pendingMode === 'edit') { loadEditShifts(); switchTab('edit'); }
+    else switchTab('apply');
+  };
+
+  // タブ初期化はハンドラ登録の後（初期化内で描画が走るため）
+  initApplyTab();          // 申請タブは管理者・スタッフ共通で使うので必ず初期化する
+  if (staffData.isAdmin) {
+    restoreAdminState();   // 店舗・期間・表示状態を復元（localStorage・個人情報は保存しない）
+    switchTab('confirm');  // 管理者の起動タブ＝シフト管理（一般画面には落とさない）
+  } else {
+    switchTab('apply');
+  }
+}
+
+// ============================================================
+// タブ切り替え
+// ============================================================
+// タブID → 下部ナビ4分類のどれに属するか（SHIFT-019）
+const NAV_OF = { apply:'nav-apply', edit:'nav-apply', confirm:'nav-shift', days:'nav-days', staff:'nav-staff' };
+// 管理者専用タブ。スタッフが辿り着けないよう二重防御する（ナビ非表示＋ここで遮断）。
+const ADMIN_TABS = ['confirm','days','staff'];
+
+function switchTab(tab) {
+  if (ADMIN_TABS.includes(tab) && !(staffData && staffData.isAdmin)) return;   // 権限のないタブへは遷移しない
+  // タブを移る時は開いているモーダルを必ず閉じる。閉じないと、例えばシフト管理の日付モーダルを
+  // 開いたままスタッフタブへ移動でき、別タブの上に前のタブのモーダルが残ってしまう。
+  document.querySelectorAll('.modal-overlay.show').forEach(m => m.classList.remove('show'));
+  ['apply','edit','days','confirm','staff'].forEach(t => {
+    document.getElementById('tab-'+t).style.display = t===tab ? '' : 'none';
+  });
+  // ナビは4分類。申請・修正はどちらも「申請」を点灯させる。
+  Object.values(NAV_OF).forEach(id => {
+    const nav = document.getElementById(id);
+    if (nav) nav.classList.remove('active');
+  });
+  const navEl = document.getElementById(NAV_OF[tab]);
+  if (navEl) navEl.classList.add('active');
+  // 申請カテゴリのときだけサブタブ（シフト申請／申請の修正）を出す
+  const isApplyCat = (tab === 'apply' || tab === 'edit');
+  document.getElementById('subtabs').classList.toggle('show', isApplyCat);
+  document.getElementById('sub-apply').classList.toggle('active', tab === 'apply');
+  document.getElementById('sub-edit').classList.toggle('active', tab === 'edit');
+
+  if (tab === 'edit')    loadEditShifts();
+  if (tab === 'days')    initDaysTab();
+  if (tab === 'confirm') initConfirmTab();   // ＝シフト管理（確認・確定・代理・通知を統合）
+  if (tab === 'staff')   loadStaffTab();
+  document.getElementById('header-title').textContent =
+    tab==='apply' ? '📅 シフト申請' : tab==='edit' ? '✏️ シフト修正' :
+    tab==='days'  ? '🗓 営業設定'   : tab==='staff' ? '🧑 スタッフ' : '🗂 シフト管理';
+  if (staffData.isAdmin && (tab === 'confirm' || tab === 'days')) saveAdminState({ view: tab });
+}
+
+// ============================================================
+// ⑤ スタッフタブ（管理者）— 一覧表示と新規登録への入口
+// 一覧は既存の getStaffList をそのまま使う（新APIなし）。
+// 登録処理は openStaffAdd / submitStaffAdd を代理入力側と共用する（実装は1つだけ）。
+// ============================================================
+async function loadStaffTab() {
+  const el = document.getElementById('staff-tab-list');
+  el.innerHTML = '<div class="empty-state">読み込み中...</div>';
+  try {
+    const data = await gasGet({ action:'getStaffList', lineId });
+    if (!data.ok) { el.innerHTML = `<div class="empty-state">${data.error || 'エラー'}</div>`; return; }
+    const all = data.staff || [];
+    const sid = (confirmStore && confirmStore.id) || staffData.stores[0].id;
+    const name = (staffData.stores.find(s => s.id === sid) || {}).name || '';
+    const mine = all.filter(s => !s.stores || !s.stores.length || s.stores.some(x => (x.id||x) === sid));
+    el.innerHTML = `<div style="margin:0 12px 8px;font-size:12px;color:#888">
+      ${name}のスタッフ ${mine.length}名（在籍 全${all.length}名）</div>`;
+    mine.forEach(s => {
+      el.insertAdjacentHTML('beforeend', `<div class="staff-row">
+        <span><span class="nm">👤 ${s.name}</span><br><span class="id">${s.id}</span></span>
+        <span class="sp"></span>
+        ${s.hasLine === false ? '<span class="staff-badge">LINE未連携</span>' : ''}</div>`);
+    });
+  } catch (e) { el.innerHTML = '<div class="empty-state">読み込みエラー</div>'; }
+}
+
+// ============================================================
+// SHIFT-022 管理者専用「スタッフのシフト登録」
+// ============================================================
+
+function adminRequestId() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID().replace(/-/g,'');
+  return Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+}
+
+async function ensureAdminShiftSession(force, opts) {
+  if (force) adminShiftToken = null;
+  if (adminShiftToken) return adminShiftToken;
+  if (adminShiftSessionPromise) return adminShiftSessionPromise;
+  adminShiftSessionPromise = (async () => {
+    const idToken = (typeof liff.getIDToken === 'function') ? liff.getIDToken() : null;
+    const accessToken = (typeof liff.getAccessToken === 'function') ? liff.getAccessToken() : null;
+    const credential = idToken || accessToken;
+    if (!credential) throw new Error('LINEの管理者認証情報を取得できません。画面を開き直してください。');
+    const data = await gasPost({ action:'adminCreateShiftSession', credential,
+      credentialType:idToken ? 'id_token' : 'access_token' }, opts);
+    if (!data || !data.ok || !data.adminToken) throw new Error((data && data.error) || '管理者認証に失敗しました。');
+    adminShiftToken = data.adminToken;
+    return adminShiftToken;
+  })();
+  try { return await adminShiftSessionPromise; }
+  finally { adminShiftSessionPromise = null; }
+}
+
+async function adminShiftGet(params, retry, opts) {
+  const token = await ensureAdminShiftSession(false, opts);
+  const data = await gasPost(Object.assign({}, params, { adminToken:token }), opts);
+  if (!data || !data.ok) {
+    const msg = (data && data.error) || '通信に失敗しました。';
+    // セッション切れの再試行は params をそのまま渡すため requestId は変わらない。
+    if (!retry && msg.indexOf('セッション') >= 0) {
+      await ensureAdminShiftSession(true, opts);
+      return adminShiftGet(params, true, opts);
+    }
+  }
+  return data;
+}
+
+// ステータス表示はモーダル最上部にあり、登録ボタンは最下部にある。
+// スマホでは押した直後の視界に入らないため、表示のたび視界へ寄せる。
+// .modal が overflow-y:auto のスクロール主体で .modal-overlay は position:fixed のため、
+// block:'nearest' ならモーダル内部だけが動き、背後のページは動かない。
+// 非対応環境・例外時は何もしない（表示自体は成立する）。
+function revealAdminEntryStatus_(el) {
+  if (!el || typeof el.scrollIntoView !== 'function') return false;
+  try { el.scrollIntoView({ block:'nearest', behavior:'smooth' }); return true; }
+  catch (e) { try { el.scrollIntoView(); return true; } catch (e2) { return false; } }
+}
+
+function showAdminEntryStatus(message, isError) {
+  const el = document.getElementById('admin-entry-status');
+  el.style.display = message ? 'block' : 'none';
+  el.textContent = message || '';
+  el.style.background = isError ? '#fff0f0' : '#eef8f1';
+  el.style.color = isError ? '#c53030' : '#176b37';
+  el.style.border = '1px solid ' + (isError ? '#ffd0d0' : '#bfe7cd');
+  if (message) revealAdminEntryStatus_(el);
+}
+
+// 失敗表示へ付ける詳細。operationId・エラーコード・対象スタッフ・対象日を示す。
+function adminShiftFailureDetail(data, operationId, code) {
+  const d = data || {}; const dates = [];
+  (d.errors || []).forEach(function(e){ if (e && e.date && dates.indexOf(e.date) < 0) dates.push(e.date); });
+  const staff = (typeof adminEntryStaff !== 'undefined' && adminEntryStaff)
+    ? adminEntryStaff.name + '（' + adminEntryStaff.id + '）' : '';
+  const lines = [];
+  if (operationId) lines.push('操作ID: ' + operationId);
+  if (code)        lines.push('エラーコード: ' + code);
+  if (staff)       lines.push('対象スタッフ: ' + staff);
+  if (dates.length) lines.push('対象日: ' + dates.join('、'));
+  return lines.length ? '\n' + lines.join('\n') : '';
+}
+
+function adminShiftFailureMessage(data, fallback) {
+  data=data||{};
+  const operationId=data.operationId || ((data.errors||[]).find(e=>e.operationId)||{}).operationId || '';
+  const code=data.errorCode || ((data.errors||[])[0]||{}).errorCode || '';
+  const status=data.operationStatus || ((data.errors||[])[0]||{}).operationStatus || '';
+  const needsReview=!!data.needsReview || status==='NEEDS_REVIEW' || (data.errors||[]).some(e=>e.needsReview||e.operationStatus==='NEEDS_REVIEW');
+  if(needsReview){
+    return '⚠️ 操作は完了していない可能性があります。\n同じ操作を繰り返さないでください。\n操作ID: '+(operationId||'取得不能')+'\n管理者によるシート・カレンダー・操作履歴の確認が必要です。';
+  }
+  if(status==='COMPENSATED'||data.compensationOk===true){
+      return '❌ 登録できませんでした。作成途中のデータは自動的に元へ戻しました。\n再登録せず、管理者へ連絡してください。'
+        + adminShiftFailureDetail(data, operationId, code || 'FINAL_STATE_MISMATCH');
+    }
+  if(code.indexOf('CALENDAR_')===0||code==='FINAL_STATE_MISMATCH')return 'カレンダーとの整合性を確認できません。'+(operationId?'\n操作ID: '+operationId:'')+'\n同じ操作を繰り返さず管理者へ連絡してください。';
+  if(code.indexOf('AUDIT_')===0)return '操作履歴を記録できません。業務データは安全確認のため変更していないか、自動復旧されています。'+(operationId?'\n操作ID: '+operationId:'');
+  if(code.indexOf('AUTH')>=0||String(data.message||data.error||'').indexOf('管理者')>=0)return '管理者認証エラー: '+(data.message||data.error||fallback||'画面を開き直してください。');
+  if(code.indexOf('DUPLICATE')>=0||String(data.message||data.error||'').indexOf('既に')>=0)return '重複エラー: '+(data.message||data.error||fallback||'同じ時間帯が登録済みです。');
+  return data.message||data.error||fallback||'保存できませんでした。';
+}
+
+// SHIFT-022: 管理者操作の成功条件を1か所へ集約する。
+// GASの ok は「saved.length>0 かつ NEEDS_REVIEWなし」でしか false にならないため、
+// 複数日で一部が COMPENSATED / FAILED でも ok:true になりうる。UI側で全件COMPLETEDを要求する。
+const ADMIN_OP_BAD_STATUSES = ['COMPENSATED','FAILED','NEEDS_REVIEW'];
+const ADMIN_OP_BAD_CODES    = ['FINAL_STATE_MISMATCH','NEEDS_REVIEW'];
+
+function adminShiftOperationStates(data) {
+  const d = data || {}; const list = [];
+  if (d.operationStatus) list.push(String(d.operationStatus));
+  (d.saved  || []).forEach(function(x){ if (x && x.operationStatus) list.push(String(x.operationStatus)); });
+  (d.errors || []).forEach(function(x){ if (x && x.operationStatus) list.push(String(x.operationStatus)); });
+  return list;
+}
+function adminShiftHasBadState(data) {
+  const d = data || {};
+  if (adminShiftOperationStates(d).some(function(st){ return ADMIN_OP_BAD_STATUSES.indexOf(st) >= 0; })) return true;
+  if (d.needsReview === true) return true;
+  const codes = [d.errorCode].concat((d.errors||[]).map(function(e){ return e && e.errorCode; }));
+  if (codes.some(function(c){ return c && ADMIN_OP_BAD_CODES.indexOf(String(c)) >= 0; })) return true;
+  if ((d.errors || []).length > 0) return true;
+  return false;
+}
+function adminShiftAllCompleted(data) {
+  const states = adminShiftOperationStates(data);
+  if (!states.length) return false;
+  return states.every(function(st){ return st === 'COMPLETED'; });
+}
+function assertAdminShiftSuccess(data, fallback) {
+  if(!data||data.ok!==true){const e=new Error(adminShiftFailureMessage(data,fallback));e.adminResponse=data||null;throw e;}
+  if(adminShiftHasBadState(data)){const e=new Error(adminShiftFailureMessage(data,fallback));e.adminResponse=data;throw e;}
+  if(!adminShiftAllCompleted(data)){const e=new Error(adminShiftFailureMessage(data,fallback));e.adminResponse=data;throw e;}
+  return data;
+}
+
+async function openAdminShiftEntry(prefillDayKey) {
+  if (!(staffData && staffData.isAdmin)) return;
+  document.querySelectorAll('.modal-overlay.show').forEach(m => m.classList.remove('show'));
+  const select = document.getElementById('admin-entry-store');
+  select.innerHTML = '';
+  staffData.stores.forEach(store => {
+    const option=document.createElement('option'); option.value=store.id; option.textContent=store.name; select.appendChild(option);
+  });
+  adminEntryStore = (confirmStore && staffData.stores.some(s=>s.id===confirmStore.id)) ? confirmStore : staffData.stores[0];
+  select.value = adminEntryStore.id;
+  adminEntryYear = confirmYear || new Date().getFullYear();
+  adminEntryMonth = confirmMonth || new Date().getMonth()+1;
+  adminEntryStaff = null; adminEntrySelected = {}; adminEntryExisting = [];
+  document.getElementById('admin-entry-search').value = '';
+  document.getElementById('admin-entry-selected-staff').textContent = 'スタッフを選択してください。';
+  showAdminEntryStatus('管理者権限を確認しています…', false);
+  document.getElementById('admin-entry-modal').classList.add('show');
+  renderAdminEntryCalendar(); renderAdminEntrySelected(); renderAdminEntryExisting();
+  try {
+    await ensureAdminShiftSession(false, ADMIN_TIMEOUT_OPTS);
+    showAdminEntryStatus('', false);
+    await loadAdminEntryStaff();
+    if (prefillDayKey) {
+      const parts=prefillDayKey.split('/').map(Number);
+      if (parts.length===2) document.getElementById('admin-entry-selected-staff').dataset.prefillDay=String(parts[1]);
+    }
+  } catch(e) { showAdminEntryStatus(e.message, true); }
+}
+
+function closeAdminShiftEntry() {
+  if (adminEntryBusy) return;
+  if (Object.keys(adminEntrySelected).length && !confirm('保存していない登録内容があります。破棄して閉じますか？')) return;
+  document.getElementById('admin-entry-modal').classList.remove('show');
+}
+
+async function onAdminEntryStoreChanged() {
+  const id=document.getElementById('admin-entry-store').value;
+  adminEntryStore=staffData.stores.find(s=>s.id===id) || null;
+  adminEntryStaff=null; adminEntrySelected={}; adminEntryExisting=[];
+  document.getElementById('admin-entry-search').value='';
+  document.getElementById('admin-entry-selected-staff').textContent='スタッフを選択してください。';
+  renderAdminEntryCalendar(); renderAdminEntrySelected(); renderAdminEntryExisting();
+  await loadAdminEntryStaff();
+}
+
+async function loadAdminEntryStaff() {
+  const body=document.getElementById('admin-entry-staff-results');
+  if(!adminEntryStore){body.innerHTML='<div class="empty-state">店舗を選択してください</div>';return;}
+  body.innerHTML='<div class="empty-state">在籍スタッフを読み込み中...</div>';
+  try {
+    const data=await adminShiftGet({action:'adminGetStaffForShiftEntry',storeId:adminEntryStore.id,query:''},false,ADMIN_TIMEOUT_OPTS);
+    if(!data || !data.ok) throw new Error((data&&data.error)||'スタッフ一覧を取得できません。');
+    adminEntryStaffList=data.staff||[]; renderAdminEntryStaff();
+  } catch(e){ body.innerHTML=''; showAdminEntryStatus(e.message,true); }
+}
+
+function renderAdminEntryStaff() {
+  const body=document.getElementById('admin-entry-staff-results');
+  const q=document.getElementById('admin-entry-search').value.replace(/\s/g,'').toLowerCase();
+  const list=adminEntryStaffList.filter(s=>!q || String(s.name).replace(/\s/g,'').toLowerCase().includes(q) || String(s.id).toLowerCase().includes(q));
+  body.innerHTML='';
+  if(!list.length){body.innerHTML='<div class="empty-state">該当する在籍スタッフがいません</div>';return;}
+  list.forEach(s=>{
+    const b=document.createElement('button'); b.type='button'; b.className='admin-staff-option'+(adminEntryStaff&&adminEntryStaff.id===s.id?' selected':'');
+    const info=document.createElement('span'); info.style.flex='1';
+    const name=document.createElement('strong'); name.textContent=s.name+'（'+s.id+'）'; info.appendChild(name);
+    const meta=document.createElement('div'); meta.className='admin-staff-meta';
+    meta.textContent='所属: '+((s.stores||[]).map(x=>x.name||x.id).join(' / ')||'全店舗')+(s.hasLine===false?'・LINE未連携':''); info.appendChild(meta);
+    b.appendChild(info); b.onclick=()=>selectAdminEntryStaff(s); body.appendChild(b);
+  });
+}
+
+async function selectAdminEntryStaff(staff) {
+  adminEntryStaff=staff; adminEntrySelected={};
+  document.getElementById('admin-entry-selected-staff').textContent='選択中: '+staff.name+'（'+staff.id+'）';
+  renderAdminEntryStaff(); renderAdminEntrySelected();
+  await loadAdminEntryExisting();
+  const holder=document.getElementById('admin-entry-selected-staff');
+  const prefill=parseInt(holder.dataset.prefillDay||'',10); delete holder.dataset.prefillDay;
+  if(prefill) toggleAdminEntryDate(prefill);
+}
+
+// 成否を戻り値で返す。呼出元が「再取得できなかった」ことを判別できるようにするため、
+// 従来どおり内部で表示もしつつ、例外は握ったまま結果を返す。
+//   { ok:true,  loaded:true  } 再取得して一覧を更新した
+//   { ok:true,  loaded:false } 対象未選択・世代ずれで読み込んでいない（失敗ではない）
+//   { ok:false, error:e }      通信・解析・業務エラーで取得できなかった
+// options.keepCurrent=true では取得前に一覧を空にしない。SHIFT-023 の背景同期は、成功直後に
+// 局所描画した行を消してから描き直すと行が一瞬消えて見えるため、この経路だけ現状を保つ。
+// 既定（引数なし）の呼び出しは従来どおり空にしてから取得する。
+async function loadAdminEntryExisting(options) {
+  const keepCurrent=!!(options&&options.keepCurrent);
+  const generation=++adminEntryLoadGeneration;
+  const expectedStaffId=adminEntryStaff&&adminEntryStaff.id,expectedStoreId=adminEntryStore&&adminEntryStore.id;
+  const expectedYear=adminEntryYear,expectedMonth=adminEntryMonth;
+  if(!keepCurrent){ adminEntryExisting=[]; renderAdminEntryCalendar(); renderAdminEntryExisting(); }
+  if(!adminEntryStaff || !adminEntryStore) return { ok:true, loaded:false };
+  try {
+    const data=await adminShiftGet({action:'adminGetShiftEntries',targetStaffId:expectedStaffId,storeId:expectedStoreId,year:expectedYear,month:expectedMonth},false,ADMIN_TIMEOUT_OPTS);
+    if(generation!==adminEntryLoadGeneration||!adminEntryStaff||!adminEntryStore||adminEntryStaff.id!==expectedStaffId||adminEntryStore.id!==expectedStoreId||adminEntryYear!==expectedYear||adminEntryMonth!==expectedMonth)return { ok:true, loaded:false };
+    if(!data||!data.ok) throw new Error((data&&data.error)||'既存シフトを取得できません。');
+    adminEntryExisting=data.shifts||[]; renderAdminEntryCalendar(); renderAdminEntryExisting();
+    return { ok:true, loaded:true };
+  } catch(e){showAdminEntryStatus(e.message,true); return { ok:false, error:e };}
+}
+
+async function moveAdminEntryMonth(delta) {
+  if(adminEntryBusy)return;
+  adminEntryMonth+=delta;
+  if(adminEntryMonth<1){adminEntryMonth=12;adminEntryYear--;}
+  if(adminEntryMonth>12){adminEntryMonth=1;adminEntryYear++;}
+  adminEntrySelected={}; renderAdminEntrySelected();
+  await loadAdminEntryExisting();
+}
+
+function adminEntryDateKey(year,month,day){return year+'-'+String(month).padStart(2,'0')+'-'+String(day).padStart(2,'0');}
+
+function renderAdminEntryCalendar() {
+  document.getElementById('admin-entry-month').textContent=adminEntryYear+'年'+adminEntryMonth+'月';
+  const grid=document.getElementById('admin-entry-grid'); while(grid.children.length>7)grid.removeChild(grid.lastChild);
+  const first=new Date(adminEntryYear,adminEntryMonth-1,1).getDay(),last=new Date(adminEntryYear,adminEntryMonth,0).getDate();
+  const today=new Date();today.setHours(0,0,0,0);const max=new Date(today.getTime()+365*24*60*60*1000);
+  for(let i=0;i<first;i++){const c=document.createElement('div');c.className='cal-cell empty';grid.appendChild(c);}
+  for(let d=1;d<=last;d++){
+    const date=new Date(adminEntryYear,adminEntryMonth-1,d),key=adminEntryDateKey(adminEntryYear,adminEntryMonth,d);
+    const existing=adminEntryExisting.filter(s=>s.day===d).length;
+    const disabled=date<today||date>max||!adminEntryStaff||adminEntryBusy;
+    const c=document.createElement('div');c.className='cal-cell'+(adminEntrySelected[key]?' selected':'')+(existing?' existing':'')+(disabled?' oor':'');
+    const n=document.createElement('div');n.className='day-num';n.textContent=d;c.appendChild(n);
+    if(existing){const b=document.createElement('div');b.className='shift-exist-badge';b.textContent=existing+'件';c.appendChild(b);}
+    if(adminEntrySelected[key]){const b=document.createElement('div');b.className='shift-badge';b.textContent='追加';c.appendChild(b);}
+    if(!disabled)c.onclick=()=>toggleAdminEntryDate(d);grid.appendChild(c);
+  }
+}
+
+function toggleAdminEntryDate(day) {
+  if(!adminEntryStaff){showAdminEntryStatus('スタッフを選択してください。',true);return;}
+  const key=adminEntryDateKey(adminEntryYear,adminEntryMonth,day);
+  if(adminEntrySelected[key]) delete adminEntrySelected[key];
+  else adminEntrySelected[key]={year:adminEntryYear,month:adminEntryMonth,day:day,start:startPresetsFor(adminEntryStore.id)[0],end:STORE_LAST[adminEntryStore.id]};
+  showAdminEntryStatus('',false);renderAdminEntryCalendar();renderAdminEntrySelected();
+}
+
+function renderAdminEntrySelected() {
+  const body=document.getElementById('admin-entry-selected'),items=Object.entries(adminEntrySelected).sort((a,b)=>a[0].localeCompare(b[0]));
+  body.innerHTML='';
+  if(!items.length){body.innerHTML='<div class="empty-state">スタッフと日付を選択してください</div>';document.getElementById('admin-entry-submit').disabled=true;return;}
+  items.forEach(([key,s])=>{
+    const row=document.createElement('div');row.className='admin-entry-row';
+    const head=document.createElement('div');head.className='admin-entry-row-head';const strong=document.createElement('strong');strong.textContent=key;head.appendChild(strong);
+    const del=document.createElement('button');del.type='button';del.className='btn-del-sel';del.textContent='×';del.onclick=()=>{delete adminEntrySelected[key];renderAdminEntryCalendar();renderAdminEntrySelected();};head.appendChild(del);row.appendChild(head);
+    const times=document.createElement('div');times.className='admin-entry-times';
+    [['出勤',s.start,'start'],['退勤',s.end,'end']].forEach(v=>{const wrap=document.createElement('label');wrap.textContent=v[0];const sel=createAdminShiftTimeSelect_(v[2]==='start'?'start':'end',v[1],function(val){s[v[2]]=val;delete s.error;renderAdminEntrySubmitState();});sel.disabled=adminEntryBusy;wrap.appendChild(sel);times.appendChild(wrap);});
+    row.appendChild(times);const err=document.createElement('div');err.className='admin-entry-error';err.textContent=s.error||'';row.appendChild(err);body.appendChild(row);
+  });
+  renderAdminEntrySubmitState();
+}
+
+// 結果未確定の操作が残っている間は登録ボタンを押せない。再登録ではなく再確認へ誘導する。
+function renderAdminEntrySubmitState(){document.getElementById('admin-entry-submit').disabled=adminEntryBusy||!!adminEntryPendingRequest||!adminEntryStaff||!Object.keys(adminEntrySelected).length;}
+
+function renderAdminEntryExisting() {
+  const body=document.getElementById('admin-entry-existing');body.innerHTML='';
+  if(!adminEntryStaff){body.innerHTML='<div class="empty-state">スタッフを選択すると表示します</div>';return;}
+  if(!adminEntryExisting.length){body.innerHTML='<div class="empty-state">この月の既存シフトは0件です。空日も選択できます。</div>';return;}
+  adminEntryExisting.slice().sort((a,b)=>a.day-b.day||a.start.localeCompare(b.start)).forEach(s=>{
+    const row=document.createElement('div');row.className='admin-entry-row';
+    const head=document.createElement('div');head.className='admin-entry-row-head';
+    const label=document.createElement('strong');label.textContent=adminEntryDateKey(s.year,s.month,s.day)+'　出勤 '+s.start+'／退勤 '+dispEnd(s.start,s.end);head.appendChild(label);
+    const chip=document.createElement('span');chip.className='origin-chip'+(s.source==='SELF'?' self':'');chip.textContent=s.source==='ADMIN'?'管理者登録':'本人申請';head.appendChild(chip);row.appendChild(head);
+    const meta=document.createElement('div');meta.className='admin-staff-meta';meta.textContent='状態: '+s.status+' / ID: '+s.id;row.appendChild(meta);
+    if(s.canManage){const actions=document.createElement('div');actions.className='shift-actions';
+      const edit=document.createElement('button');edit.type='button';edit.className='btn-edit';edit.textContent='時間変更';edit.onclick=()=>editAdminEntryExisting(s);actions.appendChild(edit);
+      const del=document.createElement('button');del.type='button';del.className='btn-delete';del.textContent='削除';del.onclick=()=>deleteAdminEntryExisting(s);actions.appendChild(del);row.appendChild(actions);}
+    body.appendChild(row);
+  });
+}
+
+const ADMIN_ENTRY_SUBMIT_LABEL='内容を確認して登録';
+
+// 登録中表示・ボタン・二重送信フラグを1か所で必ず戻す。
+// 成功・業務エラー・HTTPエラー・JSON解析失敗・ネットワーク拒否・タイムアウトの全経路で呼ぶ。
+function resetAdminEntrySubmitUi_(){
+  adminEntryBusy=false;
+  const btn=document.getElementById('admin-entry-submit');
+  if(btn)btn.textContent=ADMIN_ENTRY_SUBMIT_LABEL;
+  const re=document.getElementById('admin-entry-recheck');
+  if(re)re.style.display=adminEntryPendingRequest?'block':'none';
+  renderAdminEntrySelected();renderAdminEntryCalendar();renderAdminEntrySubmitState();
+}
+
+// 通信エラーの種類を利用者向けの文言にする。いずれも「もう一度登録してください」とは言わない。
+function adminTransportMessage_(e){
+  const kind=(e&&e.gasErrorKind)||'UNKNOWN';
+  if(kind==='TIMEOUT')return '⏱ 通信タイムアウト: '+e.message;
+  if(kind==='NETWORK')return '📡 ネットワークエラー: '+e.message;
+  if(kind==='HTTP')return '🔌 サーバー応答エラー（HTTP '+(e.httpStatus||'不明')+'）';
+  if(kind==='PARSE')return '🧩 応答を解釈できません（JSON解析エラー）: '+e.message;
+  if(kind==='ABORTED')return '⏱ 通信を打ち切りました: '+e.message;
+  return '不明なエラー: '+((e&&e.message)||e);
+}
+
+// 結果確認へ進むときの見出し。打ち切りの事実を1行目に残す。
+function adminTransportHeadline_(e){
+  if(e&&e.gasErrorKind==='TIMEOUT')
+    return '⏱ 通信タイムアウト: '+Math.round(ADMIN_REQUEST_TIMEOUT_MS/1000)+'秒以内に完了しませんでした。';
+  return adminTransportMessage_(e);
+}
+
+// 結果確認の応答から「失敗が確定した」と言い切れる業務エラーだけを列挙する。
+// 再確認しても結果が変わらない入力・権限・対象不在のみ。文言変更で誤判定しても
+// 安全側（保留維持）へ倒れるよう、列挙に当てはまらないものは未確定として扱う。
+const ADMIN_SETTLED_ERROR_PATTERNS = [
+  '対象スタッフが見つかりません',
+  'この店舗へ登録できません',
+  '日付を1件以上選択してください',
+  '一度に登録できるのは',
+  '二重送信防止IDが不正です'
+];
+function adminErrorIsSettled_(text){
+  const t = String(text || '');
+  return ADMIN_SETTLED_ERROR_PATTERNS.some(function(p){ return t.indexOf(p) >= 0; });
+}
+
+// まだ処理中だとはっきり分かる応答か。ロック取得失敗の文言一致はここだけに閉じ込め、
+// 一致しなくても失敗確定にはせず未知扱い（保留維持）になるようにする。
+function adminLooksInProgress_(d, status, code){
+  return status==='NEEDS_REVIEW' || code==='REPLAY_STATE_UNRESOLVED' || d.needsReview===true
+      || String(d.error||'').indexOf('他のシフト処理が実行中')>=0;
+}
+
+// GASは同じ requestId を受け取ると replayAdminShiftOperation_ で記録済みの結果を返し、
+// 二重登録しない。よって「同じ requestId をもう一度送る」ことが結果確認になる。
+// 新しい requestId を発行しての自動再登録は行わない。
+// cause を渡すと、打ち切りの事実を消さずに1つのメッセージへ統合する。
+// 別々に showAdminEntryStatus を呼ぶと、この関数の最初の await より前に上書きが起き、
+// 同一同期ブロック内のため打ち切り表示が一度も描画されない。
+async function confirmAdminShiftRequest_(cause){
+  const pending=adminEntryPendingRequest;
+  if(!pending)return;
+  showAdminEntryStatus(cause
+    ? adminTransportHeadline_(cause)
+      +'\n同じ操作ID（'+pending.requestId+'）で登録結果を確認しています。'
+      +'\n重複を防ぐため、もう一度登録しないでください。'
+    : '同じ操作ID（'+pending.requestId+'）で登録結果を確認しています…\nもう一度登録しないでください。', !!cause);
+  let data;
+  try{
+    data=await adminShiftGet(pending.params,false,ADMIN_TIMEOUT_OPTS);
+  }catch(e2){
+    // 確認自体が失敗。登録されたかどうかは不明のまま。再登録はしない。
+    showAdminEntryStatus('⚠️ 登録結果不明: 結果を確認できませんでした。\n'+adminTransportMessage_(e2)
+      +'\n登録された可能性があります。もう一度登録せず、「登録結果を再確認する」を押すか管理者へ連絡してください。'
+      +'\n操作ID: '+pending.requestId,true);
+    return;
+  }
+  try{
+    assertAdminShiftSuccess(data,'登録できませんでした。');
+  }catch(e3){
+    const d=e3.adminResponse||{};
+    const status=String(d.operationStatus||((d.errors||[])[0]||{}).operationStatus||'');
+    const code=String(d.errorCode||((d.errors||[])[0]||{}).errorCode||'');
+    const inProgress=adminLooksInProgress_(d,status,code);
+    // 失敗確定として保留を解除できるのは、この列挙に当てはまる場合だけ。
+    const settledFailure = !inProgress && (
+         status==='COMPENSATED' || status==='FAILED'
+      || code==='REQUEST_COMPENSATED' || d.compensationOk===true
+      || adminErrorIsSettled_(d.error||d.message));
+    if(settledFailure){
+      adminEntryPendingRequest=null;
+      showAdminEntryStatus('前回の登録は失敗として確定しました。\n'+e3.message+'\n操作ID: '+pending.requestId,true);
+      return;
+    }
+    if(inProgress){
+      // まだ処理中。再確認できる状態のまま残す。
+      showAdminEntryStatus('⏳ まだ処理中です（結果未確定）。\n重複登録になるため、もう一度登録しないでください。'
+        +'\n少し待ってから「登録結果を再確認する」を押してください。\n操作ID: '+pending.requestId
+        +(code?'\nエラーコード: '+code:''),true);
+      return;
+    }
+    // 未知の status / errorCode / 想定外の応答形式。失敗と断定せず保留を維持する。
+    showAdminEntryStatus('⏳ 登録結果を確定できません。もう一度登録せず、結果を再確認してください。'
+      +'\n「登録結果を再確認する」を押すか、操作IDを控えて管理者へ連絡してください。'
+      +'\n操作ID: '+pending.requestId
+      +(status?'\n状態: '+status:'')+(code?'\nエラーコード: '+code:''),true);
+    return;
+  }
+  // 完了が確定した。requestId 単位で登録済みなので、重複登録は発生していない。
+  adminEntryPendingRequest=null;
+  applyAdminCreateSuccessSelection_(data);
+  const okDates=(data.saved||[]).map(x=>adminEntryDateKey(x.year,x.month,x.day)).filter(Boolean);
+  const opIds=(data.saved||[]).map(x=>x.operationId).filter(Boolean);
+  // 通常成功と区別する。打ち切りが起きた事実を結果表示にも残す。
+  const head=cause
+    ? (cause.gasErrorKind==='TIMEOUT'
+        ? '✅ 通信はタイムアウトしましたが、同じ操作IDで確認した結果、前回の登録は完了していました。'
+        : '✅ 通信は完了しませんでしたが、同じ操作IDで確認した結果、前回の登録は完了していました。')
+      +'\n重複登録はありません。'
+    : '✅ 前回の登録は完了していました'+(data.replayed?'（同じ操作IDの結果を再取得）':'')+'。重複登録はありません。';
+  showAdminEntryStatus(head
+    +'\n登録件数: '+((data.saved||[]).length)+'件'
+    +(okDates.length?'\n登録できた日: '+okDates.join('、'):'')
+    +'\n操作ID: '+(opIds.length?opIds.join('、'):pending.requestId),false);
+}
+
+// 「登録結果を再確認する」ボタン。新規登録は絶対に行わない。
+async function recheckAdminShiftRequest(){
+  if(adminEntryBusy||!adminEntryPendingRequest)return;
+  adminEntryBusy=true;renderAdminEntrySubmitState();
+  try{ await confirmAdminShiftRequest_(); }
+  finally{ resetAdminEntrySubmitUi_(); }
+}
+
+// 成功した日を選択状態から外し、失敗日だけ残す。
+function applyAdminCreateSuccessSelection_(data){
+  const failedKeys=new Set((data.errors||[]).map(e=>e.date));
+  Object.keys(adminEntrySelected).forEach(k=>{if(!failedKeys.has(k))delete adminEntrySelected[k];});
+  (data.errors||[]).forEach(e=>{if(adminEntrySelected[e.date])adminEntrySelected[e.date].error=e.error;});
+}
+
+// ------------------------------------------------------------
+// SHIFT-023 体感待ち時間の短縮
+// assertAdminShiftSuccess を通った後にだけ成功として扱い、その時点で表示と操作を戻す。
+// 登録済み一覧・確定タブの再取得は背景へ回す。背景同期の成否は、確定済みの成功を
+// 取り消さない。背景同期は新しい登録・削除リクエストを一切送らない。
+// ------------------------------------------------------------
+
+const ADMIN_ENTRY_CREATE_SYNCING='登録しました。一覧を更新しています…';
+const ADMIN_ENTRY_DELETE_SYNCING='削除しました。一覧を更新しています…';
+
+// 計測は既定OFF。?shiftPerf=1 を付けたときだけ記録する。
+// OFFのときは記録先も作らず console へも出さない。表示・通信・順序は計測有無で変わらない。
+const ADMIN_PERF_ENABLED=(function(){
+  try{ return /(?:^|[?&])shiftPerf=1(?:&|$)/.test((window.location&&window.location.search)||''); }
+  catch(e){ return false; }
+})();
+let adminPerfLog_=null;
+function adminPerfMark_(phase){
+  if(!ADMIN_PERF_ENABLED)return;
+  try{
+    const at=(window.performance&&typeof window.performance.now==='function')?window.performance.now():Date.now();
+    if(!adminPerfLog_)adminPerfLog_=[];
+    adminPerfLog_.push({phase:phase,at:at});
+    console.log('[SHIFT-023] '+phase+' '+Math.round(at)+'ms');
+  }catch(e){}
+}
+function adminPerfEntries_(){ return adminPerfLog_?adminPerfLog_.slice():[]; }
+
+// 局所描画。確定済みの成功が描画の失敗で取り消されてはいけないため例外は握る。
+// 背景同期の完了時に同じ描画をやり直すので、表示は最終的にサーバー内容へ収束する。
+function renderAdminEntryLocalViews_(){
+  try{ renderAdminEntryCalendar(); renderAdminEntrySelected(); renderAdminEntryExisting(); }
+  catch(e){}
+}
+
+// 登録が確定した saved を一覧へ暫定的に取り込む。同じidは足さない（重複行を作らない）。
+// 表示中の年月に一致する行だけを対象にする。背景同期でサーバー内容へ置き換わる。
+function mergeAdminEntryLocal_(saved){
+  let added=0;
+  (Array.isArray(saved)?saved:[]).forEach(function(s){
+    if(!s||!s.id)return;
+    if(adminEntryExisting.some(function(x){return x&&x.id===s.id;}))return;
+    if(s.year!==adminEntryYear||s.month!==adminEntryMonth)return;
+    adminEntryExisting.push({id:s.id,year:s.year,month:s.month,day:s.day,
+      start:s.start||'',end:s.end||'',status:s.status||'申請中',
+      source:s.source||'ADMIN',canManage:s.canManage!==false});
+    added++;
+  });
+  return added;
+}
+
+// 削除が確定した行を一覧から外す。取り除いた件数を返す。
+function removeAdminEntryLocal_(id){
+  if(!id)return 0;
+  const before=adminEntryExisting.length;
+  adminEntryExisting=adminEntryExisting.filter(function(s){return !s||s.id!==id;});
+  return before-adminEntryExisting.length;
+}
+
+// 成功確定後の一覧同期。loadAdminEntryExisting と loadConfirmData を並列で1回ずつ実行する。
+// どちらが失敗しても onSettled へ結果を渡すだけで、成功表示は取り消さない。
+// 新しい操作が始まったら古い同期の結果で画面を上書きしない（token で世代を判定する）。
+let adminEntrySyncToken_=null;
+function syncAdminEntryAfterSuccess_(onSettled){
+  const token={};
+  adminEntrySyncToken_=token;
+  adminPerfMark_('background-sync-start');
+  const refetch=loadAdminEntryExisting({keepCurrent:true}).then(
+    function(r){ return r||{ ok:true, loaded:false }; },
+    function(e){ return { ok:false, error:e }; });
+  const confirmSync=withTimeout_(loadConfirmData(),ADMIN_REQUEST_TIMEOUT_MS,'確定タブの再読込が完了しません')
+    .then(function(){ return null; }, function(e){ return e; });
+  return Promise.all([refetch,confirmSync]).then(function(r){
+    adminPerfMark_('background-sync-end');
+    if(adminEntrySyncToken_!==token)return;
+    adminEntrySyncToken_=null;
+    try{ onSettled(r[0],r[1]); }catch(e){}
+  });
+}
+
+async function submitAdminShiftEntries() {
+  if(adminEntryBusy||!adminEntryStaff||!adminEntryStore)return;
+  // 結果未確定の操作が残っている間は新規登録しない。連打・Enter連打はここで止まる。
+  if(adminEntryPendingRequest)return recheckAdminShiftRequest();
+  const items=Object.values(adminEntrySelected);
+  items.forEach(s=>delete s.error);
+  if(!items.length){showAdminEntryStatus('日付を選択してください。',true);return;}
+  // confirm() の前に同期でフラグを立てる。ダイアログ表示中の追加クリックも弾く。
+  adminEntryBusy=true;renderAdminEntrySubmitState();
+  const summary=items.map(s=>adminEntryDateKey(s.year,s.month,s.day)+' '+s.start+'〜'+dispEnd(s.start,s.end)).join('\n');
+  if(!confirm('次の内容を管理者登録します。\n\n店舗: '+adminEntryStore.name+'\nスタッフ: '+adminEntryStaff.name+'（'+adminEntryStaff.id+'）\n\n'+summary+'\n\n登録状態は「申請中」です。確定・LINE通知は行いません。')){
+    resetAdminEntrySubmitUi_();return;
+  }
+  showAdminEntryStatus('登録中です。追加操作をしないでください…',false);
+  const requestId=adminRequestId();
+  const params={action:'adminCreateShift',targetStaffId:adminEntryStaff.id,storeId:adminEntryStore.id,shifts:JSON.stringify(items),requestId};
+  // 応答が確定するまで保留として保持する。再送時もこの requestId をそのまま使う。
+  adminEntryPendingRequest={requestId:requestId,params:params};
+  try{
+    const data=await adminShiftGet(params,false,ADMIN_TIMEOUT_OPTS);
+      // 応答が返った時点で結果は判明している。保留を解除してから成功判定する。
+      adminEntryPendingRequest=null;
+      // 失敗日を各行へ反映してから、成功条件（全件COMPLETED）を厳格に判定する。
+      // saved.length>0 でも COMPENSATED/FAILED/NEEDS_REVIEW があれば例外にする。
+      (data&&data.errors||[]).forEach(e=>{if(adminEntrySelected[e.date])adminEntrySelected[e.date].error=e.error;});
+      assertAdminShiftSuccess(data,'登録できませんでした。');
+    // ここで登録成功が確定する。以降の再取得の成否は、登録結果の判定に一切影響させない。
+    // 選択日をここで解除し、同じ内容がそのまま再送できる状態を残さない。
+    adminPerfMark_('create-success-confirmed');
+    applyAdminCreateSuccessSelection_(data);
+    // 保存された行を一覧へ先に反映し、再取得を待たずに結果を見せる。
+    mergeAdminEntryLocal_(data.saved);
+    renderAdminEntryLocalViews_();
+    const okDates=(data.saved||[]).map(x=>adminEntryDateKey(x.year,x.month,x.day)).filter(Boolean);
+    const opIds=(data.saved||[]).map(x=>x.operationId).filter(Boolean);
+    const idLine='\n操作ID: '+(opIds.length?opIds.join('、'):requestId);
+    const head=(data.saved||[]).length+'件を管理者登録しました。'
+      +(okDates.length?'\n登録できた日: '+okDates.join('、'):'');
+    // 成功表示はGASの最終成功判定より後。ここから先は一覧の再取得を待たない。
+    showAdminEntryStatus(head+'\n'+ADMIN_ENTRY_CREATE_SYNCING,false);
+    adminPerfMark_('create-success-shown');
+    // 登録済み一覧と確定タブの再取得は背景で並列に行う。loadAdminEntryExisting は
+    // 例外を投げず成否を返すため、「取得できなかった」と「取得できたが一致しない」を
+    // 取り違えないように分岐する。通信の失敗は登録の失敗ではない。
+    syncAdminEntryAfterSuccess_(function(refetch,confirmError){
+      let note;
+      if(refetch&&refetch.ok===false){
+        note='\n\n⚠️ 登録は完了しましたが、登録済み一覧を再取得できませんでした。'
+          +'\n同じ内容をもう一度登録しないでください。'
+          +'\n画面を開き直して登録済みか確認してください。'
+          +'\n'+adminTransportMessage_(refetch.error)+idLine;
+      }else if(refetch&&refetch.loaded===false){
+        // 対象が切り替わった等で照合していない。一致・不一致のどちらとも言わない。
+        note='\n\n⚠️ 登録は完了しましたが、登録済み一覧との照合は行っていません。'
+          +'\n同じ内容をもう一度登録しないでください。'
+          +'\n画面を開き直して登録済みか確認してください。'+idLine;
+      }else{
+        const ids=new Set(adminEntryExisting.map(s=>s.id));const missing=(data.saved||[]).filter(s=>!ids.has(s.id));
+        note=missing.length
+          ? '\n\n⚠️ 登録は完了しましたが、保存後の再取得結果が一致しませんでした。'
+            +'\n同じ内容をもう一度登録せず、操作IDを控えて管理者へ連絡してください。'+idLine
+          : '\n再取得でも一致しました。';
+      }
+      // 確定タブの再読込が滞っても登録結果の表示は妨げない。失敗は握り潰さず追記する。
+      showAdminEntryStatus(head+note+(confirmError
+        ? '\n\n確定タブの再読込にも失敗しました（'+adminTransportMessage_(confirmError)+'）。画面を開き直してください。'
+        : ''),false);
+    });
+  }catch(e){
+    if(e&&e.gasErrorKind&&adminEntryPendingRequest){
+      // 通信タイムアウト / ネットワーク / HTTP / JSON解析。登録されたか不明なので結果確認へ進む。
+      // 打ち切りの事実は confirmAdminShiftRequest_ が統合メッセージとして表示する。
+      // ここで別に表示すると同一同期ブロックで上書きされ、一度も描画されない。
+      await confirmAdminShiftRequest_(e);
+    }else{
+      adminEntryPendingRequest=null;
+      const d=e.adminResponse;
+      let msg=d?e.message:'通信エラー: '+e.message;
+      if(d){
+        const okD=(d.saved||[]).map(x=>adminEntryDateKey(x.year,x.month,x.day)).filter(Boolean);
+        const ngD=(d.errors||[]).map(x=>x.date).filter(Boolean);
+        if(okD.length) msg+='\n\n【保存された日】'+okD.join('、')+'\n※この日は登録済みです。重複登録しないでください。';
+        if(ngD.length) msg+='\n【失敗した日】'+ngD.join('、');
+      }
+      showAdminEntryStatus(msg,true);
+    }
+  }
+  finally{resetAdminEntrySubmitUi_();}
+}
+
+async function editAdminEntryExisting(shift) {
+  if(adminEntryBusy)return;
+  const currentDate=adminEntryDateKey(shift.year,shift.month,shift.day);
+  const dateText=prompt('対象日を入力してください（YYYY-MM-DD）',currentDate);if(dateText===null)return;
+  const dm=String(dateText).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!dm){showAdminEntryStatus('日付はYYYY-MM-DD形式で入力してください。',true);return;}
+  const newYear=parseInt(dm[1],10),newMonth=parseInt(dm[2],10),newDay=parseInt(dm[3],10);
+  const checkDate=new Date(newYear,newMonth-1,newDay);
+  if(checkDate.getFullYear()!==newYear||checkDate.getMonth()+1!==newMonth||checkDate.getDate()!==newDay){showAdminEntryStatus('存在しない日付です。',true);return;}
+  const picked=await pickAdminShiftTimes_(shift.start,shift.end);if(!picked)return;
+  const start=picked.start,end=picked.end;
+  if(!confirm(currentDate+' の管理者登録を\n'+dateText+' 出勤 '+start+'／退勤 '+dispEnd(start,end)+' に変更しますか？'))return;
+  adminEntryBusy=true;showAdminEntryStatus('変更中です。追加操作をしないでください…',false);
+  try{const data=await adminShiftGet({action:'adminUpdateShift',id:shift.id,targetStaffId:adminEntryStaff.id,storeId:adminEntryStore.id,year:newYear,month:newMonth,day:newDay,start:start,end:end,requestId:adminRequestId()},false,ADMIN_TIMEOUT_OPTS);
+    assertAdminShiftSuccess(data,'変更できませんでした。');
+    const verify=await adminShiftGet({action:'adminGetShiftEntries',targetStaffId:adminEntryStaff.id,storeId:adminEntryStore.id,year:newYear,month:newMonth},false,ADMIN_TIMEOUT_OPTS);
+    const saved=verify&&verify.ok&&(verify.shifts||[]).find(s=>s.id===shift.id);if(!saved||saved.start!==start||saved.year!==newYear||saved.month!==newMonth||saved.day!==newDay)throw new Error('変更後の再取得結果が一致しません。');
+    adminEntryYear=newYear;adminEntryMonth=newMonth;await loadAdminEntryExisting();
+    showAdminEntryStatus('変更しました。再取得でも一致しました。',false);try{ await withTimeout_(loadConfirmData(),ADMIN_REQUEST_TIMEOUT_MS,'確定タブの再読込が完了しません'); }catch(e5){ showAdminEntryStatus('変更は完了しました。 ただし確定タブの再読込に失敗しました（'+adminTransportMessage_(e5)+'）。画面を開き直してください。',false); }
+  }catch(e){showAdminEntryStatus(e.adminResponse?e.message:adminTransportMessage_(e),true);}finally{resetAdminEntrySubmitUi_();}
+}
+
+async function deleteAdminEntryExisting(shift) {
+  if(adminEntryBusy)return;if(!confirm(adminEntryDateKey(shift.year,shift.month,shift.day)+' 出勤 '+shift.start+'／退勤 '+dispEnd(shift.start,shift.end)+' の管理者登録を削除しますか？\nこの操作は取り消せません。'))return;
+  adminEntryBusy=true;showAdminEntryStatus('削除中です。追加操作をしないでください…',false);
+  try{const data=await adminShiftGet({action:'adminDeleteShift',id:shift.id,targetStaffId:adminEntryStaff.id,requestId:adminRequestId()},false,ADMIN_TIMEOUT_OPTS);
+    assertAdminShiftSuccess(data,'削除できませんでした。');
+    // ここで削除成功が確定する。以降の再取得の成否は、削除結果の判定に一切影響させない。
+    adminPerfMark_('delete-success-confirmed');
+    removeAdminEntryLocal_(shift.id);
+    renderAdminEntryLocalViews_();
+    showAdminEntryStatus(ADMIN_ENTRY_DELETE_SYNCING,false);
+    adminPerfMark_('delete-success-shown');
+    // 一覧と確定タブの再取得は背景で並列に行う。再取得の失敗で削除成功を取り消さない。
+    syncAdminEntryAfterSuccess_(function(refetch,confirmError){
+      let note,bad=false;
+      if(refetch&&refetch.ok===false){
+        note='削除は完了しましたが、登録済み一覧を再取得できませんでした。'
+          +'\n同じ操作を繰り返さないでください。'
+          +'\n画面を開き直して削除済みか確認してください。'
+          +'\n'+adminTransportMessage_(refetch.error);
+      }else if(refetch&&refetch.loaded===false){
+        note='削除は完了しましたが、登録済み一覧との照合は行っていません。'
+          +'\n画面を開き直して削除済みか確認してください。';
+      }else if(adminEntryExisting.some(s=>s&&s.id===shift.id)){
+        // 削除自体はGASが完了と判定している。取り消さず、不一致だけを警告する。
+        bad=true;
+        note='⚠️ 削除は完了しましたが、再取得後も対象シフトが残っています。'
+          +'\n再操作せず管理者へ連絡してください。';
+      }else{
+        note='削除しました。再取得で0件を確認しました。';
+      }
+      showAdminEntryStatus(note+(confirmError
+        ? '\n\n確定タブの再読込にも失敗しました（'+adminTransportMessage_(confirmError)+'）。画面を開き直してください。'
+        : ''),bad);
+    });
+  }catch(e){showAdminEntryStatus(e.adminResponse?e.message:adminTransportMessage_(e),true);}finally{resetAdminEntrySubmitUi_();}
+}
+
+// ============================================================
+// ① 申請タブ
+// ============================================================
+function initApplyTab() {
+  const tabs = document.getElementById('store-tabs-apply');
+  tabs.innerHTML = '';
+  staffData.stores.forEach((store, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'store-tab' + (i===0?' active':'');
+    btn.textContent = store.name;
+    btn.onclick = () => { applyStore = store; document.querySelectorAll('#store-tabs-apply .store-tab').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); loadApplyData(); };
+    tabs.appendChild(btn);
+  });
+  applyStore = staffData.stores[0];
+  document.getElementById('apply-prev').onclick = () => { applyMonth--; if(applyMonth<1){applyMonth=12;applyYear--;} loadApplyData(); };
+  document.getElementById('apply-next').onclick = () => { applyMonth++; if(applyMonth>12){applyMonth=1;applyYear++;} loadApplyData(); };
+  loadApplyData();
+}
+
+async function loadApplyData() {
+  applyExisting = {}; applyShortage = {};
+  if (multiMode) { multiPicked = {}; document.querySelectorAll('.dow-chip').forEach(x=>x.classList.remove('on')); updateBatchCount(); } // 月・店舗切替で選択をリセット
+  renderApplyCal(); // 枠を即表示（データは後から反映）
+  const [a, b] = await Promise.allSettled([
+    gasGet({ action:'getShifts',  lineId, year:applyYear, month: applyMonth }),
+    gasGet({ action:'getShortage', storeId: applyStore.id, year:applyYear, month: applyMonth }),
+  ]);
+  if (a.status==='fulfilled' && a.value.ok) a.value.shifts.filter(s=>s.storeId===applyStore.id).forEach(s => applyExisting[s.date]={start:s.start,end:s.end,confirmed:s.confirmed});
+  if (b.status==='fulfilled' && b.value.ok) applyShortage = b.value.days;
+  renderApplyCal();
+}
+
+function renderApplyCal() {
+  document.getElementById('apply-month-lbl').textContent = `${applyYear}年${applyMonth}月`;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const max   = new Date(today.getTime() + 62*24*60*60*1000);
+  const grid  = document.getElementById('apply-grid');
+  while (grid.children.length > 7) grid.removeChild(grid.lastChild);
+  const first = new Date(applyYear, applyMonth-1, 1).getDay();
+  const last  = new Date(applyYear, applyMonth, 0).getDate();
+  document.getElementById('apply-prev').disabled = new Date(applyYear,applyMonth-1,1) <= new Date(today.getFullYear(),today.getMonth(),1);
+  for (let i=0;i<first;i++) { const c=document.createElement('div'); c.className='cal-cell empty'; grid.appendChild(c); }
+  for (let d=1;d<=last;d++) {
+    const dt = new Date(applyYear,applyMonth-1,d); const key=`${applyMonth}/${d}`;
+    const isSel = !!(applySelected[key]?.storeId===applyStore?.id);
+    const isEx  = !!applyExisting[key];
+    const sh    = applyShortage[key];
+    const isShort = !!(sh && !sh.ok);
+    const isPast = dt<today, isOor=dt>max, isToday=dt.getTime()===today.getTime();
+    const isPicked = multiMode && !!multiPicked[key];
+    const c = document.createElement('div');
+    let cls = 'cal-cell';
+    if (isPast||isOor) cls += ' oor';
+    if (isToday)       cls += ' today';
+    if (isPicked)      cls += ' picked';
+    else if (isSel)    cls += ' selected';
+    else if (isEx)     cls += (applyExisting[key].confirmed ? ' has-shift' : ' pending');
+    else if (isShort && !isPast && !isOor) cls += ' short';
+    c.className = cls;
+    const num=document.createElement('div'); num.className='day-num'; num.textContent=d; c.appendChild(num);
+    if (isEx && !isSel) {
+      const e=applyExisting[key];
+      const b=document.createElement('div'); b.className=e.confirmed?'shift-exist-badge':'shift-pending-badge';
+      b.textContent=(e.confirmed?'':'申)')+e.start+'\n〜'+dispEnd(e.start,e.end); c.appendChild(b);
+    } else if (isShort && !isSel && !isPast && !isOor) {
+      const b=document.createElement('div'); b.className='short-badge';
+      b.textContent = sh.shortage>0 ? 'あと'+sh.shortage : (sh.missingPro ? '熟練' : '募集'); c.appendChild(b);
+    }
+    if (isPicked) { const b=document.createElement('div'); b.className='shift-badge'; b.textContent='✓'; c.appendChild(b); }
+    else if (isSel) { const b=document.createElement('div'); b.className='shift-badge'; const s=applySelected[key]; b.textContent=(s.part==='day'?'☀️':s.part==='night'?'🌙':'')+s.start+'〜'+dispEnd(s.start,s.end); c.appendChild(b); }
+    if (!isPast&&!isOor) c.onclick=()=>tapApplyDate(applyMonth,d,key);
+    grid.appendChild(c);
+  }
+}
+
+function tapApplyDate(month,day,key) {
+  if (multiMode) {
+    const dt=new Date(applyYear,month-1,day);
+    if (multiPicked[key]) delete multiPicked[key];
+    else multiPicked[key]={year:applyYear,month,day,dow:dt.getDay()};
+    renderApplyCal(); updateBatchCount(); return;
+  }
+  if (applySelected[key]?.storeId===applyStore.id) { delete applySelected[key]; renderApplyCal(); renderApplyList(); updateApplyBtn(); return; }
+  if (applyExisting[key]) {
+    const dt=new Date(applyYear,month-1,day); const e=applyExisting[key];
+    if (!confirm(`📅 ${month}/${day}（${DOW[dt.getDay()]}）のシフト\n${applyStore.name}\n\n🕒 ${e.start} 〜 ${dispEnd(e.start, e.end)}\n\nこの日にもう一件 希望を追加しますか？`)) return;
+  }
+  pendingDate={year:applyYear,month,day,key}; pendingMode='apply';
+  openModal(month,day,applyStore);
+}
+
+async function submitApply() {
+  const items = Object.values(applySelected).filter(s=>s.storeId===applyStore.id);
+  if (!items.length) return;
+  document.getElementById('apply-submit').disabled=true;
+  document.getElementById('apply-submit').textContent='送信中...';
+  try {
+    const data = await gasGet({ action:'saveShift', lineId, storeId:applyStore.id, shifts:JSON.stringify(items) });
+    showDone(applyStore.name, data.saved||[], data.errors||[], 'apply');
+    items.forEach(s=>delete applySelected[`${s.month}/${s.day}`]);
+  } catch(e) { alert('送信エラー: '+e.message); }
+  updateApplyBtn();
+}
+
+function renderApplyList() {
+  const items=Object.values(applySelected).filter(s=>s.storeId===applyStore?.id).sort((a,b)=>a.month!==b.month?a.month-b.month:a.day-b.day);
+  const c=document.getElementById('apply-selected');
+  if (!items.length) { c.innerHTML='<div class="empty-state">日付をタップして追加</div>'; return; }
+  c.innerHTML='';
+  items.forEach(s=>{ const key=`${s.month}/${s.day}`; const dt=new Date(applyYear,s.month-1,s.day); const pb = s.part==='day'?'<span class="sel-part day">☀️昼</span>':s.part==='night'?'<span class="sel-part night">🌙夜</span>':''; const row=document.createElement('div'); row.className='sel-item'; row.innerHTML=`<div class="sel-date">${s.month}/${s.day}（${DOW[dt.getDay()]}）</div><div class="sel-time">${pb}${s.start} 〜 ${dispEnd(s.start, s.end)}</div><button class="btn-del-sel" onclick="delApplySel('${key}')">✕</button>`; c.appendChild(row); });
+}
+function delApplySel(key) { delete applySelected[key]; renderApplyCal(); renderApplyList(); updateApplyBtn(); }
+function updateApplyBtn() { const n=Object.values(applySelected).filter(s=>s.storeId===applyStore?.id).length; const btn=document.getElementById('apply-submit'); btn.disabled=n===0; btn.textContent=`送信する（${n}件）`; }
+
+// --- まとめて選択（連続申請） ---
+function toggleMultiMode() {
+  multiMode = !multiMode;
+  multiPicked = {};
+  document.getElementById('batch-toggle').classList.toggle('active', multiMode);
+  document.getElementById('batch-toggle').textContent = multiMode ? '✓ まとめて選択中（タップで終了）' : '🔁 まとめて選択';
+  document.getElementById('batch-tools').style.display = multiMode ? 'block' : 'none';
+  document.querySelectorAll('.dow-chip').forEach(x=>x.classList.remove('on'));
+  renderApplyCal(); updateBatchCount();
+}
+function pickWeekday(dow) {
+  const today=new Date(); today.setHours(0,0,0,0);
+  const max=new Date(today.getTime()+62*24*60*60*1000);
+  const last=new Date(applyYear,applyMonth,0).getDate();
+  // 表示中の月の該当曜日（過去・期間外を除く）を集める
+  const keys=[];
+  for (let d=1; d<=last; d++) { const dt=new Date(applyYear,applyMonth-1,d); if(dt.getDay()===dow && dt>=today && dt<=max) keys.push({key:`${applyMonth}/${d}`,month:applyMonth,day:d,dow}); }
+  if (!keys.length) return;
+  const allOn = keys.every(k=>multiPicked[k.key]);
+  keys.forEach(k=>{ if(allOn) delete multiPicked[k.key]; else multiPicked[k.key]={year:applyYear,month:k.month,day:k.day,dow:k.dow}; });
+  document.querySelectorAll('.dow-chip')[dow].classList.toggle('on', !allOn);
+  renderApplyCal(); updateBatchCount();
+}
+function clearMulti() {
+  multiPicked = {};
+  document.querySelectorAll('.dow-chip').forEach(x=>x.classList.remove('on'));
+  renderApplyCal(); updateBatchCount();
+}
+function updateBatchCount() {
+  const n=Object.keys(multiPicked).length;
+  document.getElementById('batch-count').textContent = `${n}日選択中`;
+  document.getElementById('batch-apply').disabled = n===0;
+}
+function openBatchModal() {
+  const days=Object.values(multiPicked);
+  if (!days.length) return;
+  pendingMode='applyBatch'; modalStore=applyStore;
+  const cfg=STORE_DAY_PART[applyStore.id];
+  const allEligible = !!cfg && days.every(d=>cfg.dows.indexOf(d.dow)>=0);
+  document.getElementById('modal-title').textContent=`まとめて入力（${days.length}日）`;
+  const tg=document.getElementById('modal-part-toggle');
+  if (allEligible) { tg.style.display='flex'; modalDate={month:days[0].month,day:days[0].day}; setModalPart('day'); }
+  else { tg.style.display='none'; pendingPart=null; renderModalPresets(applyStore, 3, 'night'); }
+  document.getElementById('start-custom').value=''; document.getElementById('end-custom').value='';
+  document.getElementById('modal').classList.add('show');
+}
+
+// ============================================================
+// ② 修正タブ
+// ============================================================
+async function loadEditShifts() {
+  document.getElementById('edit-month-lbl').textContent = `${editYear}年${editMonth}月`;
+  document.getElementById('edit-prev').onclick = () => { editMonth--; if(editMonth<1){editMonth=12;editYear--;} loadEditShifts(); };
+  document.getElementById('edit-next').onclick = () => { editMonth++; if(editMonth>12){editMonth=1;editYear++;} loadEditShifts(); };
+  document.getElementById('edit-list').innerHTML = '<div class="empty-state">読み込み中...</div>';
+  try {
+    const data = await gasGet({ action:'getShiftsWithId', lineId, month:editMonth, year:editYear });
+    editShifts = data.ok ? data.shifts : [];
+    renderEditList();
+  } catch(e) { document.getElementById('edit-list').innerHTML='<div class="empty-state">読み込みエラー</div>'; }
+}
+
+function renderEditList() {
+  const list = document.getElementById('edit-list');
+  if (!editShifts.length) { list.innerHTML='<div class="empty-state">この月のシフトはありません</div>'; return; }
+  list.innerHTML='';
+  editShifts.sort((a,b)=>{ const [am,ad]=a.date.split('/').map(Number); const [bm,bd]=b.date.split('/').map(Number); return am!==bm?am-bm:ad-bd; }).forEach(s=>{
+    const [m,d]=s.date.split('/').map(Number); const dt=new Date(editYear,m-1,d);
+    const confirmed = (s.status==='確定' || s.status==='確定済');
+    const lock = confirmed && !staffData.isAdmin; // 確定後はスタッフ本人は編集不可（管理者は可）
+    const item=document.createElement('div'); item.className='shift-item';
+    const statusChip = confirmed ? ' <span class="shift-store" style="background:#eef5ff;color:#3182ce">確定済み</span>' : '';
+    const actions = lock
+      ? `<div class="shift-actions"><span style="font-size:12px;color:#888;">確定済みのため変更できません。変更は管理者にご連絡ください。</span></div>`
+      : `<div class="shift-actions"><button class="btn-edit" onclick="openEditModal('${s.id}','${s.date}','${s.storeId}','${s.start}','${s.end}','self')">時間変更</button><button class="btn-delete" onclick="confirmDelete('${s.id}','${s.date}','self')">削除</button></div>`;
+    item.innerHTML=`<div class="shift-item-header"><span class="shift-date">${s.date}（${DOW[dt.getDay()]}）</span><span class="shift-store">${STORE_NAME[s.storeId]||s.storeId}</span>${statusChip}</div><div class="shift-time">${s.start} 〜 ${dispEnd(s.start, s.end)}</div>${actions}`;
+    list.appendChild(item);
+  });
+}
+
+// 編集後にどのリストを再読込するか
+// 旧代理タブ廃止（SHIFT-017）により本人修正のみ。呼び出し側の互換のため関数は残す。
+function reloadEditList(mode) { return loadEditShifts(); }
+
+// 昼夜スロット境界（分）。GAS側 DAY_NIGHT_BOUNDARY_MIN と同じ値を維持すること。
+// 昼の部がある店舗（駅前）だけ、シフト自身の開始時刻で昼夜を判定する。
+const EDIT_DAY_BOUNDARY_MIN = { S002: 17 * 60 + 30 };
+function editStartMin(v) { const m = String(v || '').match(/^(\d{1,2}):(\d{2})/); return m ? parseInt(m[1],10)*60 + parseInt(m[2],10) : null; }
+// 選択したシフトが「昼の部」か。店舗・曜日ではなくシフト自身の開始時刻で決める
+// （店舗と曜日だけで判定すると、昼シフトの時間変更に夜の候補しか出ない）。
+function isDaySlotShift(storeId, start) {
+  const b = EDIT_DAY_BOUNDARY_MIN[storeId];
+  if (b === undefined) return false;
+  const m = editStartMin(start);
+  return m !== null && m < b;
+}
+// スロットキー：'day'/'night'/'all'。GAS側 slotKey_ と同じ規則を維持すること
+// （昼夜2枠がない店舗・休み・時刻不明は 'all'＝またぎ判定の対象外）。
+function editSlotKey(storeId, start) {
+  const b = EDIT_DAY_BOUNDARY_MIN[storeId];
+  if (b === undefined) return 'all';
+  const m = editStartMin(start);
+  if (m === null) return 'all';
+  return m < b ? 'day' : 'night';
+}
+
+function openEditModal(id,date,storeId,start,end,mode) {
+  editingShift={id,date,storeId,origStart:start}; editMode = mode || 'self';   // origStart＝昼夜またぎ判定用
+  document.getElementById('edit-modal-title').textContent=`${date}の時間変更`;
+  // 昼シフトは昼の候補・夜シフトは夜の候補（自由入力は従来どおり両方で使える）
+  const dp = STORE_DAY_PART[storeId];
+  if (dp && isDaySlotShift(storeId, start)) {
+    buildPresets2('edit-start', dp.start, start);
+    buildPresets2('edit-end',   dp.end,   normEnd(start,end));
+  } else {
+    buildPresets2('edit-start',startPresetsFor(storeId),start);
+    buildPresets2('edit-end',endPresetsFor(storeId),normEnd(start,end)); // 旧「1:00」形式でもプリセット既定が一致するよう正規化
+  }
+  document.getElementById('edit-start-custom').value='';
+  document.getElementById('edit-end-custom').value='';
+  editInitial = { start: getTime2('edit-start'), end: getTime2('edit-end') };  // 未保存判定の基準（開いた時点のUI状態）
+  document.getElementById('edit-modal').classList.add('show');
+}
+
+// 未保存の変更があれば確認してから閉じる（修正・代理・確定モーダルの各編集で共通）
+function closeEditModal() {
+  const dirty = editInitial && (getTime2('edit-start') !== editInitial.start || getTime2('edit-end') !== editInitial.end);
+  if (dirty && !confirm('保存していない変更があります。破棄して閉じますか？')) return;
+  document.getElementById('edit-modal').classList.remove('show');
+}
+
+// 確定モーダルの行から、その行のシフトを既存の編集モーダルで開く（店舗=現在の確定タブ店舗／日付=開いている日）
+function openConfirmEdit(id, start, end) {
+  // ID無しの古いデータ（手入力行など）は誤った行を更新するより安全に停止する
+  if (!id || id === 'undefined') { alert('このシフトはIDが無い古いデータのため、画面からは変更できません。\nスプレッドシートで直接修正してください。'); return; }
+  openEditModal(id, confirmDayKey, confirmStore.id, start, end, 'confirm');
+}
+
+async function saveEditTime() {
+  const start=getTime2('edit-start'), end=getTime2('edit-end');
+  if (!start){alert('開始時間を選択してください');return;}
+  if (!end)  {alert('終了時間を選択してください');return;}
+  // 昼夜の境界をまたぐ時間変更は不可（自由入力でまたげてしまうためAPI送信前に拒否。GAS側でも同じ検証あり）
+  {
+    const os = editSlotKey(editingShift.storeId, editingShift.origStart);
+    const ns = editSlotKey(editingShift.storeId, start);
+    if (os !== 'all' && ns !== 'all' && os !== ns) {
+      alert('昼の部と夜の部をまたぐ時間変更はできません。\n\n現在のシフトを削除して、変更後の時間帯で新しく登録してください。');
+      return;   // シート・カレンダー・LINEのいずれにも触れない
+    }
+  }
+  const saveBtn = document.getElementById('edit-modal-confirm');
+  if (saveBtn.disabled) return;                                   // 連打防止
+  const _label = saveBtn.textContent;
+  saveBtn.disabled = true; saveBtn.textContent = '保存中...';
+  try {
+    const data = await gasGet({ action:'updateShiftWeb', lineId, id:editingShift.id, start, end });
+    if (data && !data.ok) {
+      // ID不一致＝他の操作やカレンダー同期でシフトが更新・削除された可能性。誤更新せず最新を読み込み直す
+      if (String(data.error||'').indexOf('シフトが見つかりません') !== -1 && editMode === 'confirm') {
+        alert('このシフトは他の操作や同期で更新された可能性があります。\n最新の一覧を読み込み直します。もう一度お試しください。');
+        document.getElementById('edit-modal').classList.remove('show');
+        await loadConfirmData();
+        openConfirmModal(confirmDayKey);
+        return;
+      }
+      alert(data.error || '変更できませんでした'); return;   // 失敗：モーダルは開いたまま
+    }
+    document.getElementById('edit-modal').classList.remove('show');                   // 成功時のみ閉じる
+    if (data && data.calendarSyncOk === false) {
+      alert(data.warning || 'シフトは保存されましたが、Googleカレンダーへ反映できませんでした');  // カレンダー未反映：通常成功とは別表示
+    }
+    if (editMode === 'confirm') {
+      await loadConfirmData();
+      openConfirmModal(confirmDayKey);            // 保存後は確定モーダルへ戻る（修正タブは再読込しない）
+    } else {
+      await reloadEditList(editMode);
+    }
+  } catch(e) { alert('更新エラー: '+e.message); }
+  finally { saveBtn.disabled = false; saveBtn.textContent = _label; }
+}
+
+async function confirmDelete(id,date,mode) {
+  if (!confirm(`${date}のシフトを削除しますか？`)) return;
+  try {
+    const data = await gasGet({ action:'deleteShiftWeb', lineId, id });
+    if (data && !data.ok) alert(data.error || '削除できませんでした');
+    await reloadEditList(mode || 'self');
+  } catch(e) { alert('削除エラー: '+e.message); }
+}
+
+
+// ============================================================
+// ④ 営業日設定タブ（管理者）
+// ============================================================
+function initDaysTab() {
+  const tabs = document.getElementById('store-tabs-days');
+  if (!tabs.children.length) {
+    const stores = staffData.stores.concat([{ id:'ALL', name:'全体' }]);   // 末尾に「全体」タブ
+    stores.forEach((store, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'store-tab' + (i===0?' active':'');
+      btn.textContent = store.name;
+      btn.onclick = () => {
+        daysStore = store;
+        document.querySelectorAll('#store-tabs-days .store-tab').forEach(b=>b.classList.remove('active'));
+        btn.classList.add('active');
+        applyDaysStoreMode();
+        loadDaysData();
+      };
+      tabs.appendChild(btn);
+    });
+    daysStore = staffData.stores[0];
+    document.getElementById('days-prev').onclick = () => { daysMonth--; if(daysMonth<1){daysMonth=12;daysYear--;} loadDaysData(); };
+    document.getElementById('days-next').onclick = () => { daysMonth++; if(daysMonth>12){daysMonth=1;daysYear++;} loadDaysData(); };
+  }
+  applyDaysStoreMode();
+  loadDaysData();
+}
+
+// 「全体」タブはミーティング専用（休業/営業は店舗ごとの操作なので無効化）
+function applyDaysStoreMode() {
+  const isAll = daysStore && daysStore.id === 'ALL';
+  document.getElementById('dmode-normal').disabled = isAll;
+  setDaysMode(isAll ? 'meeting' : daysMode);
+}
+
+function setDaysMode(mode) {
+  daysMode = mode;
+  document.getElementById('dmode-normal').classList.toggle('active', mode==='normal');
+  document.getElementById('dmode-meeting').classList.toggle('active', mode==='meeting');
+  document.getElementById('days-help-normal').style.display  = mode==='normal' ? '' : 'none';
+  document.getElementById('days-help-meeting').style.display = mode==='meeting' ? '' : 'none';
+}
+
+function setDaysStatus(type, message) {
+  const el = document.getElementById('days-status');
+  if (!el) return;
+  el.style.display = message ? '' : 'none';
+  el.textContent = message || '';
+  el.style.background = type === 'error' ? '#fff0f0' : '#f4f6f8';
+  el.style.color = type === 'error' ? '#c53030' : '#555';
+}
+
+async function loadDaysData() {
+  const generation = ++daysLoadGeneration;
+  const context = { storeId: daysStore.id, year: daysYear, month: daysMonth };
+  daysReady = false;
+  setDaysStatus('loading', '最新の営業設定を読み込み中…');
+  renderDaysCal();
+  try {
+    const data = await gasGet({ action:'getDayStatus', lineId, storeId:context.storeId, year:context.year, month:context.month });
+    if (!data.ok) throw new Error(data.error || '営業設定を取得できませんでした');
+    if (generation !== daysLoadGeneration || daysStore.id !== context.storeId || daysYear !== context.year || daysMonth !== context.month) return false;
+    daysFixedOff = data.fixedOff || [];
+    daysHolidays = new Set(data.holidays || []);
+    daysOpens    = new Set(data.specialOpens || []);
+    daysMeetings = new Set(data.meetings || []);
+    daysReady = true;
+    setDaysStatus('', '');
+    renderDaysCal();
+    return true;
+  } catch(e) {
+    if (generation !== daysLoadGeneration) return false;
+    daysReady = false;
+    setDaysStatus('error', '営業設定の取得に失敗しました。再読み込みしてください。');
+    renderDaysCal();
+    return false;
+  }
+}
+
+function renderDaysCal() {
+  document.getElementById('days-month-lbl').textContent = `${daysYear}年${daysMonth}月`;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const grid  = document.getElementById('days-grid');
+  while (grid.children.length > 7) grid.removeChild(grid.lastChild);
+  const first = new Date(daysYear, daysMonth-1, 1).getDay();
+  const last  = new Date(daysYear, daysMonth, 0).getDate();
+  document.getElementById('days-prev').disabled = new Date(daysYear,daysMonth-1,1) <= new Date(today.getFullYear(),today.getMonth(),1);
+  for (let i=0;i<first;i++) { const c=document.createElement('div'); c.className='cal-cell empty'; grid.appendChild(c); }
+  for (let d=1;d<=last;d++) {
+    const dt = new Date(daysYear,daysMonth-1,d); const key=`${daysMonth}/${d}`;
+    const isPast = dt<today, isToday=dt.getTime()===today.getTime();
+    const isOpen = daysOpens.has(key);
+    const isHol  = daysHolidays.has(key);
+    const isFix  = daysFixedOff.includes(dt.getDay());
+    const isMeet = daysMeetings.has(key);
+    const c = document.createElement('div');
+    let cls = 'cal-cell';
+    if (isPast) cls += ' oor';
+    if (isToday) cls += ' today';
+    if (isOpen)       cls += ' dopen';
+    else if (isHol)   cls += ' dholiday';
+    else if (isMeet)  cls += ' dmeeting';
+    else if (isFix)   cls += ' dayoff';
+    c.className = cls;
+    const num=document.createElement('div'); num.className='day-num'; num.textContent=d; c.appendChild(num);
+    let label='', lcls='';
+    if (isOpen)      { label='営業'; lcls='open'; }
+    else if (isHol)  { label='休業'; lcls='hol'; }
+    else if (isFix)  { label='定休'; lcls='off'; }
+    if (label) { const b=document.createElement('div'); b.className='day-status '+lcls; b.textContent=label; c.appendChild(b); }
+    if (isMeet) { const b=document.createElement('div'); b.className='day-status meet'; b.textContent='会議'; c.appendChild(b); }
+    if (!isPast && daysReady && !daysMutating) c.onclick=()=>tapDaysDate(d,key);
+    else if (!isPast) { c.style.cursor='not-allowed'; c.setAttribute('aria-disabled','true'); }
+    grid.appendChild(c);
+  }
+}
+
+async function tapDaysDate(day, key) {
+  if (!daysReady || daysMutating) return;
+  const dt = new Date(daysYear, daysMonth-1, day); const dow = dt.getDay();
+  const isMeet = daysMeetings.has(key);
+
+  // ── ミーティングモード ──
+  if (daysMode === 'meeting') {
+    const label = daysStore.id === 'ALL' ? '全店' : daysStore.name;
+    const msg = isMeet
+      ? `${daysMonth}/${day}（${DOW[dow]}）の${label}のミーティングを解除しますか？`
+      : `${daysMonth}/${day}（${DOW[dow]}）を${label}のミーティング日に設定しますか？\n（Googleカレンダーにも予定が入ります）`;
+    if (!confirm(msg)) return;
+    const expectedOn = !isMeet;
+    daysMutating = true;
+    daysReady = false;
+    setDaysStatus('loading', expectedOn ? 'ミーティングを設定中…' : 'ミーティングを解除中…');
+    renderDaysCal();
+    try {
+      const data = await gasGet({ action:'setMeeting', lineId, storeId:daysStore.id, year:daysYear, month:daysMonth, day, on:expectedOn ? '1' : '0' });
+      if (!data.ok) throw new Error(data.error || 'ミーティング設定を変更できませんでした');
+      if (Boolean(data.requestedOn) !== expectedOn) throw new Error('サーバーの処理結果が要求内容と一致しません');
+      const loaded = await loadDaysData();
+      if (!loaded || daysMeetings.has(key) !== expectedOn) throw new Error('変更後の状態を確認できませんでした');
+      alert(expectedOn ? 'ミーティングを設定しました。' : 'ミーティングを解除しました。');
+    } catch(e) {
+      daysReady = false;
+      setDaysStatus('error', '変更結果を確認できません。再読み込みしてください。');
+      renderDaysCal();
+      alert('変更エラー: '+e.message);
+    } finally {
+      daysMutating = false;
+      renderDaysCal();
+    }
+    return;
+  }
+
+  // ── 通常モード（休業/営業）※「全体」タブでは無効 ──
+  if (isMeet) { alert('この日はミーティング日です。解除は「🧑‍🤝‍🧑 ミーティング」モードで行ってください。'); return; }
+  const isOpen = daysOpens.has(key), isHol = daysHolidays.has(key), isFix = daysFixedOff.includes(dow);
+  let type, msg;
+  if (isOpen)      { type='normal';  msg=`${daysMonth}/${day}（${DOW[dow]}）の臨時営業を取り消し、定休日に戻しますか？`; }
+  else if (isHol)  { type='normal';  msg=`${daysMonth}/${day}（${DOW[dow]}）の臨時休業を取り消しますか？`; }
+  else if (isFix)  { type='open';    msg=`${daysMonth}/${day}（${DOW[dow]}）は定休日です。\n${daysStore.name}を臨時営業にしますか？`; }
+  else             { type='holiday'; msg=`${daysMonth}/${day}（${DOW[dow]}）の${daysStore.name}を臨時休業にしますか？`; }
+  if (!confirm(msg)) return;
+  try {
+    const data = await gasGet({ action:'setDayType', lineId, storeId:daysStore.id, year:daysYear, month:daysMonth, day, type });
+    if (!data.ok) throw new Error(data.error || '営業設定を変更できませんでした');
+    await loadDaysData();
+  } catch(e) { alert('変更エラー: '+e.message); }
+}
+
+// ============================================================
+// 管理画面の状態保持（SHIFT-017）
+// localStorage に保存するのは「店舗ID・対象年月・表示タブ」だけ。
+// PIN・氏名・LINE ID・シフト内容などの個人情報は保存しない。
+// ============================================================
+var ADMIN_STATE_KEYS = { store: 'giornoShiftAdmin.store', period: 'giornoShiftAdmin.period', view: 'giornoShiftAdmin.view' };
+
+function saveAdminState(patch) {
+  try {
+    if (patch.store  !== undefined) localStorage.setItem(ADMIN_STATE_KEYS.store, String(patch.store));
+    if (patch.period !== undefined) localStorage.setItem(ADMIN_STATE_KEYS.period, String(patch.period)); // 'YYYY-M'
+    if (patch.view   !== undefined) localStorage.setItem(ADMIN_STATE_KEYS.view, String(patch.view));
+  } catch (e) {}   // プライベートブラウズ等で書けなくても機能は止めない
+}
+
+// 起動時に店舗・期間を復元する。壊れた値・存在しない店舗は既定へフォールバック。
+function restoreAdminState() {
+  try {
+    const sid = localStorage.getItem(ADMIN_STATE_KEYS.store);
+    if (sid && STORE_NAME[sid]) confirmStore = { id: sid, name: STORE_NAME[sid] };
+    const p = localStorage.getItem(ADMIN_STATE_KEYS.period);
+    if (p && /^\d{4}-\d{1,2}$/.test(p)) {
+      const [y, m] = p.split('-').map(Number);
+      if (y >= 2020 && y <= 2100 && m >= 1 && m <= 12) { confirmYear = y; confirmMonth = m; }
+    }
+  } catch (e) {}
+}
+
+// ============================================================
+// ⑤ シフト管理タブ（管理者）＝ 旧「確定」タブに修正・代理・削除を統合（SHIFT-017）
+// ============================================================
+function initConfirmTab() {
+  const tabs = document.getElementById('store-tabs-confirm');
+  if (!tabs.children.length) {
+    const allStores = Object.keys(STORE_NAME).map(id => ({ id, name: STORE_NAME[id] }));
+    // 復元済みの店舗があればそれを選択状態にする（無ければ先頭）
+    if (!confirmStore || !STORE_NAME[confirmStore.id]) confirmStore = allStores[0];
+    allStores.forEach((store) => {
+      const btn = document.createElement('button');
+      btn.className = 'store-tab' + (store.id === confirmStore.id ? ' active' : '');
+      btn.textContent = store.name;
+      btn.onclick = () => {
+        confirmStore = store;
+        document.querySelectorAll('#store-tabs-confirm .store-tab').forEach(b=>b.classList.remove('active'));
+        btn.classList.add('active');
+        saveAdminState({ store: store.id });
+        loadConfirmData();
+      };
+      tabs.appendChild(btn);
+    });
+    document.getElementById('confirm-prev').onclick = () => { confirmMonth--; if(confirmMonth<1){confirmMonth=12;confirmYear--;} saveAdminState({ period: confirmYear+'-'+confirmMonth }); loadConfirmData(); };
+    document.getElementById('confirm-next').onclick = () => { confirmMonth++; if(confirmMonth>12){confirmMonth=1;confirmYear++;} saveAdminState({ period: confirmYear+'-'+confirmMonth }); loadConfirmData(); };
+  }
+  loadConfirmData();
+}
+
+async function loadConfirmData() {
+  confirmDays = {};
+  renderConfirmCal();
+  try {
+    const data = await gasGet({ action:'getConfirmCal', lineId, storeId:confirmStore.id, month:confirmMonth, year:confirmYear });
+    if (data.ok) { confirmDays = data.days || {}; confirmPendingNotify = data.pendingNotify || 0; }
+  } catch(e) {}
+  renderConfirmCal();
+  renderNotifyBar();
+}
+
+function renderNotifyBar() {
+  document.getElementById('confirm-notify-store').textContent = '';
+  document.getElementById('confirm-notify-count').textContent = confirmPendingNotify;
+  document.getElementById('confirm-notify-bar').style.display = confirmPendingNotify > 0 ? 'flex' : 'none';
+  renderPendingBar();
+}
+
+// SHIFT-017：未処理バッジ（申請中／確定・未通知）。confirmDays から数えるので実データと必ず一致する。
+// 過去日は getConfirmCal 側で active:false になり、未通知強調の対象外＝ここでも申請中のみ数える。
+function renderPendingBar() {
+  let pend = 0;
+  Object.keys(confirmDays).forEach(k => {
+    (confirmDays[k] || []).forEach(it => {
+      if (!it.confirmed && !it.declined && !it.rest) pend++;
+    });
+  });
+  confirmPending = pend;
+  const el = document.getElementById('confirm-pending-count');
+  if (el) el.textContent = pend;
+  const bar = document.getElementById('confirm-pending-bar');
+  if (bar) bar.style.display = pend > 0 ? 'flex' : 'none';
+}
+
+// 未通知リストを開く（全店・店舗ごと。スタッフ別にチェックを付けて選んだ人だけ通知できる）
+async function openNotifyList() {
+  const body = document.getElementById('notify-list-body');
+  document.getElementById('notify-list-sub').textContent = '送りたい人だけチェックを付けて通知できます（初期は全員ON）';
+  body.innerHTML = '<div class="empty-state">読み込み中...</div>';
+  document.getElementById('notify-list-modal').classList.add('show');
+  try {
+    const data = await gasGet({ action:'getPendingNotifyList', lineId });   // storeId無し＝全店
+    const list = data.ok ? data.list : [];
+    if (!list.length) { body.innerHTML='<div class="empty-state">未通知の確定はありません</div>'; return; }
+    const byStore = {};
+    list.forEach(it => { (byStore[it.storeId] = byStore[it.storeId] || []).push(it); });
+    body.innerHTML='';
+    Object.keys(byStore).forEach(sid => {
+      // スタッフごとにまとめる（1人1チェック）
+      const byStaff = {};
+      byStore[sid].forEach(it => { (byStaff[it.staffId] = byStaff[it.staffId] || { name:it.name, rows:[] }).rows.push(it); });
+      const sec = document.createElement('div'); sec.style.marginBottom = '18px';
+      let html = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">`
+        + `<div style="font-weight:bold;font-size:14px">${STORE_NAME[sid]||sid}　${Object.keys(byStaff).length}名</div>`
+        + `<button onclick="doNotifyStore('${sid}')" style="flex-shrink:0;padding:7px 14px;background:#06c755;color:#fff;border:none;border-radius:16px;font-size:12px;font-weight:bold;cursor:pointer">選択した人に通知</button></div>`;
+      Object.keys(byStaff).forEach(stid => {
+        const g = byStaff[stid];
+        const times = g.rows.map(r => `${r.date}（${r.dow}） ${r.start} 〜 ${dispEnd(r.start, r.end)}`).join('<br>');
+        html += `<label class="cf-row" style="cursor:pointer;align-items:center">`
+          + `<input type="checkbox" class="notif-chk" data-store="${sid}" data-staffid="${stid}" checked style="width:20px;height:20px;margin-right:10px;flex-shrink:0;accent-color:#06c755">`
+          + `<div class="cf-info"><div class="cf-name">${g.name}</div><div class="cf-time">${times}</div></div></label>`;
+      });
+      sec.innerHTML = html;
+      body.appendChild(sec);
+    });
+  } catch(e) { body.innerHTML='<div class="empty-state">読み込みエラー</div>'; }
+}
+
+// チェックした人だけに通知（店舗単位のボタン）
+async function doNotifyStore(storeId) {
+  const checks = Array.from(document.querySelectorAll(`.notif-chk[data-store="${storeId}"]`));
+  const staffIds = checks.filter(c => c.checked).map(c => c.dataset.staffid);
+  if (!staffIds.length) { alert('通知する人にチェックを付けてください。'); return; }
+  if (!confirm(`${STORE_NAME[storeId]||storeId}：選択した${staffIds.length}名にLINEで確定通知を送ります。\nよろしいですか？`)) return;
+  try {
+    const data = await gasGet({ action:'notifyConfirmed', lineId, storeId, staffIds: JSON.stringify(staffIds) });
+    if (!data.ok) { alert('通知エラー: ' + (data.error||'不明')); return; }
+    else if (data.shiftCount === 0) alert('通知対象はありません。過去日の未送信確定は自動的に除外されています。');
+    else alert(`✅ ${STORE_NAME[storeId]||storeId}：${data.notified}名に通知しました（${data.shiftCount}件）。`);
+  } catch(e) { alert('通知エラー: ' + e.message); return; }
+  await loadConfirmData();   // バナー更新
+  await openNotifyList();    // リスト再描画（通知済みの人は消える）
+}
+
+function renderConfirmCal() {
+  document.getElementById('confirm-month-lbl').textContent = `${confirmYear}年${confirmMonth}月`;
+  const grid = document.getElementById('confirm-grid');
+  while (grid.children.length > 7) grid.removeChild(grid.lastChild);
+  const first = new Date(confirmYear, confirmMonth-1, 1).getDay();
+  const last  = new Date(confirmYear, confirmMonth, 0).getDate();
+  for (let i=0;i<first;i++) { const c=document.createElement('div'); c.className='cal-cell empty'; grid.appendChild(c); }
+  for (let d=1;d<=last;d++) {
+    const key   = `${confirmMonth}/${d}`;
+    const raw   = confirmDays[key]||[];
+    const items = raw.filter(x=>!x.rest && !x.declined);
+    const pend  = items.filter(x=>!x.confirmed).length;
+    const conf  = items.filter(x=>x.confirmed).length;
+    const c = document.createElement('div');
+    let cls = 'cal-cell';
+    if (pend>0)      cls += ' has-pending';
+    else if (conf>0) cls += ' all-conf';
+    c.className = cls;
+    const num=document.createElement('div'); num.className='day-num'; num.textContent=d; c.appendChild(num);
+    if (pend>0 || conf>0) {
+      const b=document.createElement('div'); b.className='confirm-badge';
+      b.innerHTML = (pend>0?`<div class="pend">申${pend}</div>`:'') + (conf>0?`<div class="conf">確${conf}</div>`:'');
+      c.appendChild(b);
+    }
+    if (raw.length>0) c.onclick = () => openConfirmModal(key);
+    grid.appendChild(c);
+  }
+}
+
+function openConfirmModal(key) {
+  confirmDayKey = key;
+  const [m,d] = key.split('/').map(Number);
+  const dt = new Date(confirmYear, m-1, d);
+  document.getElementById('confirm-modal-title').textContent = `${key}（${DOW[dt.getDay()]}）`;
+  document.getElementById('confirm-modal-sub').textContent   = confirmStore.name + ' の申請';
+  const list = document.getElementById('confirm-modal-list');
+  list.innerHTML = '';
+  const rank = it => it.rest?3 : it.declined?2 : it.confirmed?1 : 0;
+  const items = (confirmDays[key]||[]).slice().sort((a,b)=> rank(a)-rank(b));
+  items.forEach(it => {
+    const row = document.createElement('div'); row.className='cf-row';
+    const skill = it.skill==='熟練'?'★':it.skill==='成長中'?'△':it.skill==='新人'?'○':'';
+    const origin = it.source === 'ADMIN' ? '<span class="origin-chip">管理者登録</span>' : '<span class="origin-chip self">本人申請</span>';
+    // 「時間変更」ボタン：過去日(active===false)・見送り・休みには出さない。申請中/確定・未通知/通知済みに出す。
+    const canEditTime = (it.active !== false) && !it.rest && !it.declined;
+    const editBtn = canEditTime ? `<button class="cf-edit" onclick="openConfirmEdit('${it.id}','${it.start}','${it.end}')">時間変更</button>` : '';
+    // SHIFT-017：削除は「時間変更できる状態」と同条件＝過去日・見送り・休みには出さない（誤操作防止）
+    const delBtn = canEditTime ? `<button class="cf-del" onclick="cfDelete('${it.id}','${String(it.name).replace(/'/g,"\\'")}')">削除</button>` : '';
+    if (it.rest) {
+      row.innerHTML = `<div style="width:22px;flex-shrink:0"></div><div class="cf-info"><div class="cf-name" style="color:#aaa">${skill}${it.name}${origin}</div></div><div class="cf-chip" style="background:#f0f0f0;color:#999">休み</div>`;
+    } else if (it.declined) {
+      row.innerHTML = `<div style="width:22px;flex-shrink:0"></div><div class="cf-info"><div class="cf-name" style="color:#aaa">${skill}${it.name}${origin}</div><div class="cf-time" style="color:#bbb">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip" style="background:#f0f0f0;color:#999">見送り</div><button class="cf-undo" onclick="revertOne('${it.id}')">取消</button>`;
+    } else if (it.confirmed && it.notified) {
+      row.innerHTML = `<div style="width:22px;flex-shrink:0;text-align:center;color:#3182ce;font-weight:bold">✓</div><div class="cf-info"><div class="cf-name">${skill}${it.name}${origin}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip conf">通知済み</div>${editBtn}${delBtn}`;
+    } else if (it.confirmed && it.active === false) {
+      // 過去日の未送信確定：勤務データは残すが「未通知（通知待ち）」の強調は出さず、中立の「確定」表示にする（取消は従来どおり可能）
+      row.innerHTML = `<div style="width:22px;flex-shrink:0;text-align:center;color:#3182ce;font-weight:bold">✓</div><div class="cf-info"><div class="cf-name">${skill}${it.name}${origin}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip conf">確定</div><button class="cf-undo" onclick="revertOne('${it.id}')">取消</button>`;
+    } else if (it.confirmed) {
+      row.innerHTML = `<div style="width:22px;flex-shrink:0;text-align:center;color:#3182ce;font-weight:bold">✓</div><div class="cf-info"><div class="cf-name">${skill}${it.name}${origin}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip" style="background:#fff3e0;color:#e67e22">確定・未通知</div><button class="cf-undo" onclick="revertOne('${it.id}')">取消</button>${editBtn}${delBtn}`;
+    } else {
+      row.innerHTML = `<input type="checkbox" class="cf-check" value="${it.id}" checked onchange="updateCfBtn()"><div class="cf-info"><div class="cf-name">${skill}${it.name}${origin}</div><div class="cf-time">${it.start} 〜 ${dispEnd(it.start, it.end)}</div></div><div class="cf-chip pend">申請中</div>${editBtn}${delBtn}`;
+    }
+    list.appendChild(row);
+  });
+  updateCfBtn();
+  // リセット対象＝確定（未通知）＋見送り。GAS側 revertShifts の実対象と一致させる（通知済みは対象外）。
+  // 0件ならボタンごと出さない（APIも呼ばれない）。
+  const resettable = items.filter(it => (it.confirmed && !it.notified) || it.declined);
+  const rBtn = document.getElementById('cf-revert-all');
+  rBtn.textContent = `この日の処理${resettable.length}件をリセット`;
+  rBtn.style.display = resettable.length ? '' : 'none';
+  document.getElementById('confirm-modal').classList.add('show');
+}
+
+function cfSelectAll(on) {
+  document.querySelectorAll('#confirm-modal-list .cf-check').forEach(c => c.checked = on);
+  updateCfBtn();
+}
+
+// ------------------------------------------------------------
+// 代理入力（SHIFT-017）：シフト管理の日付モーダルから直接、他スタッフのシフトを追加する。
+// 旧「代理タブ」の getStaffList → 時間入力 → proxyShift をそのまま再利用（新規APIなし）。
+// 保存のみ＝確定もLINE通知もしない（保存・確定・通知の分離を維持）。
+// ------------------------------------------------------------
+async function openProxyPicker() {
+  // 単一導線：日付詳細 →（閉じる）→ スタッフ選択 → 時間入力 → 保存 → 日付詳細へ戻る。
+  // モーダルは常に1枚だけ表示し、前の画面を裏に残さない（手動で閉じさせない）。
+  document.getElementById('confirm-modal').classList.remove('show');
+  const body = document.getElementById('proxy-pick-body');
+  document.getElementById('proxy-pick-sub').textContent = `${confirmDayKey}　${confirmStore.name} に追加します`;
+  body.innerHTML = '<div class="empty-state">読み込み中...</div>';
+  document.getElementById('proxy-pick-modal').classList.add('show');
+  try {
+    const data = await gasGet({ action:'getStaffList', lineId });
+    const list = (data.ok ? data.staff : []) || [];
+    const target = list.filter(s => !s.stores || !s.stores.length || s.stores.some(x => (x.id||x) === confirmStore.id));
+    const show = target.length ? target : list;
+    if (!show.length) { body.innerHTML = '<div class="empty-state">スタッフが取得できませんでした</div>'; return; }
+    body.innerHTML = '';
+    show.forEach(s => {
+      const row = document.createElement('button');
+      row.className = 'cf-row';
+      row.style.cssText = 'width:100%;text-align:left;background:#fff;border:1px solid #eee;border-radius:10px;margin-bottom:8px;min-height:48px;cursor:pointer';
+      // hasLine が false ＝ LINE未連携（管理者が登録しただけのスタッフ）。代理入力はできるが確定通知は届かない。
+      const noLine = (s.hasLine === false)
+        ? '<div style="font-size:11px;color:#e67e22;margin-top:2px">LINE未連携（確定通知は届きません）</div>' : '';
+      row.innerHTML = `<div class="cf-info"><div class="cf-name">👤 ${s.name}</div>${noLine}</div><div class="cf-chip pend">選ぶ</div>`;
+      row.onclick = () => startProxyAdd(s);
+      body.appendChild(row);
+    });
+  } catch (e) { body.innerHTML = '<div class="empty-state">読み込みエラー</div>'; }
+}
+
+// ------------------------------------------------------------
+// 新規スタッフ登録（SHIFT-018 最小版・管理者のみ）
+// 代理入力のスタッフ選択モーダルから開く。氏名・所属店舗・雇用区分だけを送り、
+// GAS側 adminAddStaff がスタッフマスターへ1行だけ追加する。
+// 登録に成功したらスタッフ一覧を読み直す＝その場で代理申請の対象として選べる。
+// LINE招待・タイムカード・人件費への登録はこの画面では行わない。
+// ------------------------------------------------------------
+// 登録モーダルをどこから開いたか。'proxy'=代理入力の選択画面 / 'staff'=スタッフタブ。
+// 閉じた後・登録後の戻り先を決めるためだけに使う（処理本体は共通・1実装）。
+let staffAddFrom = 'proxy';
+
+function openStaffAdd() {
+  staffAddFrom = document.getElementById('proxy-pick-modal').classList.contains('show') ? 'proxy' : 'staff';
+  document.getElementById('proxy-pick-modal').classList.remove('show');
+  const sel = document.getElementById('staff-add-store');
+  sel.innerHTML = '';
+  staffData.stores.forEach(st => {
+    const o = document.createElement('option');
+    o.value = st.id; o.textContent = st.name;
+    sel.appendChild(o);
+  });
+  if (confirmStore) sel.value = confirmStore.id;   // いま開いている店舗を初期選択
+  document.getElementById('staff-add-name').value = '';
+  document.getElementById('staff-add-emp').value  = 'アルバイト';
+  showStaffAddMsg('');
+  document.getElementById('staff-add-modal').classList.add('show');
+}
+
+function showStaffAddMsg(text, isError) {
+  const el = document.getElementById('staff-add-msg');
+  if (!text) { el.style.display = 'none'; el.textContent = ''; return; }
+  el.textContent  = text;
+  el.style.background = isError ? '#fff0f0' : '#f0fbf3';
+  el.style.color      = isError ? '#c0392b' : '#1e7e45';
+  el.style.border     = '1px solid ' + (isError ? '#ffd0d0' : '#bfe7cd');
+  el.style.display    = 'block';
+}
+
+function closeStaffAdd(back) {
+  document.getElementById('staff-add-modal').classList.remove('show');
+  // モーダルは常に1枚。開いた場所へ戻す（代理入力なら選択画面／スタッフタブなら一覧）。
+  if (back && staffAddFrom === 'proxy') openProxyPicker();
+}
+
+async function submitStaffAdd() {
+  const name    = document.getElementById('staff-add-name').value.trim();
+  const storeId = document.getElementById('staff-add-store').value;
+  const empType = document.getElementById('staff-add-emp').value;
+  if (!name)    { showStaffAddMsg('氏名を入力してください', true); return; }
+  if (!storeId) { showStaffAddMsg('所属店舗を選んでください', true); return; }
+  const storeName = (staffData.stores.find(s => s.id === storeId) || {}).name || storeId;
+  if (!confirm(`次の内容でスタッフを登録します。\n\n氏名：${name}\n所属店舗：${storeName}\n雇用区分：${empType}\n\nよろしいですか？`)) return;
+  const btn = document.getElementById('staff-add-do');
+  btn.disabled = true; const _l = btn.textContent; btn.textContent = '登録中...';
+  showStaffAddMsg('');
+  try {
+    const data = await gasGet({ action:'adminAddStaff', lineId, name, storeId, empType });
+    if (!data || !data.ok) { showStaffAddMsg((data && data.error) ? data.error : '登録できませんでした', true); return; }
+    document.getElementById('staff-add-modal').classList.remove('show');
+    // 開いた場所に応じて再読込。どちらも一覧が最新化され、登録した人がすぐ対象になる。
+    if (staffAddFrom === 'proxy') await openProxyPicker();
+    else await loadStaffTab();
+    alert(`${data.name} さん（${data.staffId}）を登録しました。\n\n` +
+          '「スタッフのシフト登録」から対象スタッフとして選べます。');
+  } catch (e) {
+    showStaffAddMsg('通信エラー: ' + e.message, true);
+  } finally {
+    btn.disabled = false; btn.textContent = _l;
+  }
+}
+
+// スタッフを選んだら既存の時間入力モーダルを開く（proxy専用の時間UIを作らない）
+function startProxyAdd(staff) {
+  document.getElementById('proxy-pick-modal').classList.remove('show');
+  proxyAddTarget = staff;
+  const [m, d] = confirmDayKey.split('/').map(Number);
+  pendingMode = 'proxyAdd';
+  pendingDate = { month:m, day:d, key:confirmDayKey };
+  openModal(m, d, confirmStore);
+}
+
+// 時間入力モーダルの確定 → proxyShift で1件だけ登録（確定・通知はしない）
+async function submitProxyAdd(start, end) {
+  const [m, d] = confirmDayKey.split('/').map(Number);
+  const shifts = [{ year:confirmYear, month:m, day:d, start, end, storeId:confirmStore.id }];
+  try {
+    const data = await gasGet({
+      action:'proxyShift', lineId,
+      targetStaffId: proxyAddTarget.id, storeId: confirmStore.id,
+      shifts: JSON.stringify(shifts)
+    });
+    if (data && !data.ok) { alert('登録エラー: ' + (data.error || '不明')); return; }
+    if (data && data.errors && data.errors.length) { alert('一部登録できませんでした：\n' + data.errors.join('\n')); }
+    await loadConfirmData();           // カレンダー・バッジ更新
+    openConfirmModal(confirmDayKey);   // 統合モーダルへ戻る（画面移動なし）
+  } catch (e) { alert('登録エラー: ' + e.message); }
+}
+
+// リセット：この日の「確定（未通知）・見送り」をまとめて申請中へ戻す。通知済みは対象外（GAS側でも保護）。
+// リセット操作は新しいLINE通知を送らない（revertShifts は push を呼ばない）。
+async function revertAllOfDay() {
+  const items = (confirmDays[confirmDayKey] || []).filter(it => (it.confirmed && !it.notified) || it.declined);
+  if (!items.length) return;   // 対象0件：ボタン自体が非表示だが、二重防御としてAPIも呼ばない
+  if (!confirm(`${confirmDayKey} の処理済みシフト${items.length}件を申請中に戻します。\n\n確定（未通知）と見送りが申請中へ戻ります。\n通知済みのシフトは対象外です。\nすでに送信したLINE通知は取り消されません。\n実行しますか？`)) return;
+  const btn = document.getElementById('cf-revert-all');
+  btn.disabled = true; const _l = btn.textContent; btn.textContent = '処理中...';
+  try {
+    const data = await gasGet({ action:'revertShifts', lineId, ids: JSON.stringify(items.map(it => it.id)) });
+    if (!data.ok) { alert('エラー: ' + (data.error || '不明')); return; }
+    if (data.failed) alert(`${data.failed}件は対象のカレンダー予定を一意に特定できなかったため変更していません。\n予定とシフトの重複を確認してください。`);
+    await loadConfirmData();
+    openConfirmModal(confirmDayKey);
+  } catch (e) { alert('エラー: ' + e.message); }
+  finally { btn.disabled = false; btn.textContent = _l; }
+}
+
+// 統合モーダルからの削除（確認を挟む＝誤操作防止）。削除後はモーダルへ戻る。
+async function cfDelete(id, name) {
+  if (!id || id === 'undefined') { alert('このシフトはIDが無い古いデータのため、画面からは削除できません。\nスプレッドシートで直接修正してください。'); return; }
+  if (!confirm(`${confirmDayKey}　${name} さんのシフトを削除します。\n元に戻せません。よろしいですか？`)) return;
+  try {
+    const data = await gasGet({ action:'deleteShiftWeb', lineId, id });
+    if (data && !data.ok) {
+      alert(data.error || '削除できませんでした');
+      await loadConfirmData(); openConfirmModal(confirmDayKey);   // 状態がずれている可能性があるため最新へ
+      return;
+    }
+    await loadConfirmData();
+    openConfirmModal(confirmDayKey);
+  } catch (e) { alert('削除エラー: ' + e.message); }
+}
+
+function updateCfBtn() {
+  const n = document.querySelectorAll('#confirm-modal-list .cf-check:checked').length;
+  const doBtn = document.getElementById('confirm-modal-do');
+  doBtn.disabled = n===0; doBtn.textContent = `選択した${n}件を確定`;
+  const dcBtn = document.getElementById('confirm-modal-decline');
+  dcBtn.disabled = n===0; dcBtn.textContent = `選択した${n}件を見送り`;
+}
+
+async function doDecline() {
+  const ids = Array.from(document.querySelectorAll('#confirm-modal-list .cf-check:checked')).map(c=>c.value);
+  if (!ids.length) return;
+  if (!confirm(`選択した${ids.length}件を見送り（取下げ）にします。\n本人への通知はされません。よろしいですか？`)) return;
+  const btn = document.getElementById('confirm-modal-decline');
+  btn.disabled = true; btn.textContent = '処理中...';
+  try {
+    const data = await gasGet({ action:'declineShifts', lineId, ids:JSON.stringify(ids) });
+    if (!data.ok) { alert('エラー: ' + (data.error||'不明')); btn.disabled = false; return; }
+    if (data.failed) alert(`${data.failed}件は対象のカレンダー予定を一意に特定できなかったため変更していません。\n予定とシフトの重複を確認してください。`);
+    await loadConfirmData();            // カレンダー・通知バナーを更新
+    openConfirmModal(confirmDayKey);    // モーダルは開いたまま。残りを続けて操作できる
+  } catch(e) { alert('エラー: ' + e.message); updateCfBtn(); }
+}
+
+async function revertOne(id) {
+  if (!confirm('このシフトを「申請中」に戻しますか？')) return;
+  try {
+    const data = await gasGet({ action:'revertShifts', lineId, ids:JSON.stringify([id]) });
+    if (!data.ok) { alert('エラー: ' + (data.error||'不明')); return; }
+    await loadConfirmData();
+    if ((confirmDays[confirmDayKey]||[]).length) openConfirmModal(confirmDayKey);
+    else document.getElementById('confirm-modal').classList.remove('show');
+  } catch(e) { alert('エラー: ' + e.message); }
+}
+
+async function doConfirm() {
+  const ids = Array.from(document.querySelectorAll('#confirm-modal-list .cf-check:checked')).map(c=>c.value);
+  if (!ids.length) return;
+  const btn = document.getElementById('confirm-modal-do');
+  btn.disabled = true; btn.textContent = '確定中...';
+  try {
+    const data = await gasGet({ action:'confirmShifts', lineId, ids:JSON.stringify(ids) });
+    if (!data.ok) { alert('確定エラー: ' + (data.error||'不明')); btn.disabled = false; return; }
+    if (data.failed) alert(`${data.failed}件は対象のカレンダー予定を一意に特定できなかったため変更していません。\n予定とシフトの重複を確認してください。`);
+    await loadConfirmData();            // カレンダー・通知バナーを更新
+    openConfirmModal(confirmDayKey);    // モーダルは開いたまま。残りを続けて確定/見送りできる
+  } catch(e) { alert('確定エラー: ' + e.message); updateCfBtn(); }
+}
+
+// ============================================================
+// 完了画面
+// ============================================================
+function showDone(label, saved, errors, mode) {
+  pendingMode=mode;
+  document.getElementById('app').style.display='none';
+  document.getElementById('bottom-nav').style.display='none';
+  document.getElementById('done-view').style.display='block';
+  let msg=label+'\n\n';
+  if(saved.length) msg+=`✅ ${saved.join('、')} を登録しました！\n`;
+  if(errors.length) msg+=`\n⚠️ スキップ：\n${errors.join('\n')}`;
+  document.getElementById('done-msg').textContent=msg;
+}
+
+// ============================================================
+// 時間モーダル（申請・代理共用）
+// ============================================================
+function openModal(month, day, store) {
+  const year = (pendingMode==='proxyAdd') ? confirmYear : applyYear;
+  const dt=new Date(year,month-1,day);
+  modalStore=store; modalDate={month,day};
+  document.getElementById('modal-title').textContent=`${month}/${day}（${DOW[dt.getDay()]}）`;
+  const dp = dayPartFor(store?.id, dt.getDay());
+  const tg = document.getElementById('modal-part-toggle');
+  if (dp) { tg.style.display='flex'; setModalPart('day'); }          // 駅前×土日は昼/夜トグル（既定=昼）
+  else    { tg.style.display='none'; pendingPart=null; renderModalPresets(store, dt.getDay(), 'night'); }
+  document.getElementById('start-custom').value='';
+  document.getElementById('end-custom').value='';
+  document.getElementById('modal').classList.add('show');
+}
+// 昼/夜どちらのプリセットを出すか
+function renderModalPresets(store, dow, part) {
+  const dp = dayPartFor(store?.id, dow);
+  if (part==='day' && dp) {
+    buildPresets2('start', dp.start, dp.open);
+    buildPresets2('end',   dp.end,   dp.close);
+    document.getElementById('modal-sub').textContent=(store?.name||'')+' ☀️昼の部 '+dp.open+'〜'+dp.close;
+  } else {
+    buildPresets2('start', startPresetsFor(store?.id), store?.open||'18:00');
+    buildPresets2('end',   endPresetsFor(store?.id),   store?.close||'24:00');
+    document.getElementById('modal-sub').textContent=(store?.name||'')+' '+(store?.open||'')+'〜'+dispEnd(store?.open, store?.close||'');
+  }
+}
+function setModalPart(part) {
+  pendingPart = part;
+  document.getElementById('part-day').classList.toggle('active', part==='day');
+  document.getElementById('part-night').classList.toggle('active', part==='night');
+  const year = (pendingMode==='proxyAdd') ? confirmYear : applyYear;
+  const dow = new Date(year, modalDate.month-1, modalDate.day).getDay();
+  renderModalPresets(modalStore, dow, part);
+  document.getElementById('start-custom').value='';
+  document.getElementById('end-custom').value='';
+}
+function closeModal(){
+  document.getElementById('modal').classList.remove('show'); pendingDate=null;
+  if(pendingMode==='applyBatch') pendingMode='apply';
+  else if(pendingMode==='proxyAdd'){ pendingMode='apply'; if (confirmDayKey) openConfirmModal(confirmDayKey); } // 代理追加のキャンセル→日付詳細へ戻る
+}
+
+function confirmTime() {
+  const start=getTime2('start'), end=getTime2('end');
+  if(!start){alert('開始時間を選んでください');return;}
+  if(!end)  {alert('終了時間を選んでください');return;}
+  const part = (document.getElementById('modal-part-toggle').style.display!=='none') ? pendingPart : null;
+  // SHIFT-017 代理追加：シフト管理の統合モーダルから1件だけ即登録（確定・通知はしない）
+  if (pendingMode==='proxyAdd') {
+    document.getElementById('modal').classList.remove('show');
+    pendingMode='apply';
+    submitProxyAdd(start, end);
+    return;
+  }
+  // まとめて連続申請：選択した全日に同じ時間を適用
+  if (pendingMode==='applyBatch') {
+    Object.values(multiPicked).forEach(d=>{ applySelected[`${d.month}/${d.day}`]={year:d.year,month:d.month,day:d.day,start,end,storeId:applyStore.id,part}; });
+    multiPicked={}; multiMode=false;
+    document.getElementById('batch-tools').style.display='none';
+    document.getElementById('batch-toggle').classList.remove('active');
+    document.getElementById('batch-toggle').textContent='🔁 まとめて選択';
+    document.querySelectorAll('.dow-chip').forEach(x=>x.classList.remove('on'));
+    document.getElementById('modal').classList.remove('show');
+    renderApplyCal(); renderApplyList(); updateApplyBtn(); updateBatchCount();
+    pendingDate=null; pendingMode='apply'; return;
+  }
+  const {year,month,day,key}=pendingDate;
+  const entry={year,month,day,start,end,storeId:applyStore.id,part};
+  { applySelected[key]=entry; document.getElementById('modal').classList.remove('show'); renderApplyCal(); renderApplyList(); updateApplyBtn(); }
+  pendingDate=null;
+}
+
+// ============================================================
+// ユーティリティ
+// ============================================================
+function buildPresets2(type, times, def) {
+  const c=document.getElementById(type+'-presets'); c.innerHTML='';
+  let selected=false;
+  times.forEach(t=>{
+    const label = dispT((typeof t==='object') ? t.label : t); // ボタン表示は「翌1:00」形式（値は内部形式のまま）
+    const value = (typeof t==='object') ? t.value : t;
+    const isDef = !selected && value===def;
+    if (isDef) selected=true;
+    const b=document.createElement('button'); b.className='time-btn'+(isDef?' selected':''); b.textContent=label; b.dataset.time=value;
+    b.onclick=()=>{ document.querySelectorAll(`#${type}-presets .time-btn`).forEach(x=>x.classList.remove('selected')); b.classList.add('selected'); document.getElementById(type+'-custom').value=''; };
+    c.appendChild(b);
+  });
+}
+function clearPresets(type){ document.querySelectorAll(`#${type}-presets .time-btn`).forEach(b=>b.classList.remove('selected')); }
+function getTime2(type){ const c=document.getElementById(type+'-custom').value.trim(); if(c)return c; const b=document.querySelector(`#${type}-presets .time-btn.selected`); return b?b.dataset.time:null; }
+
+// ============================================================
+// 起動
+// ============================================================
+init();
+</script>
+</body>
+</html>
