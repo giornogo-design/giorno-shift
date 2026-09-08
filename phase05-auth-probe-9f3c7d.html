@@ -29,28 +29,29 @@
         if (!idToken) throw new Error('ログイン情報を取得できませんでした');
 
         status.textContent = '準備できました。下のボタンで認証テストを実行します。';
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = target.href;
-        for (const [name, value] of Object.entries({
+        const payload = {
           transport: 'authenticatedWeb',
           action: 'authPing',
           idToken
-        })) {
-          const input = document.createElement('input');
-          input.type = 'hidden';
-          input.name = name;
-          input.value = value;
-          form.appendChild(input);
-        }
-        document.body.appendChild(form);
+        };
         const button = document.createElement('button');
         button.type = 'button';
         button.textContent = '認証テストを実行';
-        button.addEventListener('click', () => {
+        button.addEventListener('click', async () => {
           button.disabled = true;
           status.textContent = 'テスト環境で認証を確認しています…';
-          form.submit();
+          try {
+            const response = await fetch(target.href, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+              body: new URLSearchParams(payload)
+            });
+            const result = await response.json();
+            status.textContent = `認証結果: ${JSON.stringify(result)}`;
+          } catch (error) {
+            status.textContent = `認証通信に失敗しました: ${error.message}`;
+            button.disabled = false;
+          }
         });
         document.body.appendChild(button);
       } catch (error) {
