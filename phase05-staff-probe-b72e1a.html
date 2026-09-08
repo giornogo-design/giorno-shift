@@ -34,6 +34,20 @@
           issuerMatches: !!(claims && claims.iss === 'https://access.line.me'),
           unexpired: !!(claims && Number(claims.exp) > Math.floor(Date.now() / 1000))
         };
+        if (!tokenChecks.unexpired) {
+          const refresh = document.createElement('button');
+          refresh.type = 'button';
+          refresh.textContent = 'LINE認証を更新';
+          refresh.addEventListener('click', () => {
+            const redirect = new URL(location.href);
+            redirect.searchParams.set('refreshed', '1');
+            liff.logout();
+            liff.login({ redirectUri: redirect.href });
+          });
+          status.textContent = 'LINE認証の期限が切れています。認証を更新します。';
+          document.body.appendChild(refresh);
+          return;
+        }
 
         const form = document.createElement('form');
         form.method = 'POST';
