@@ -28,7 +28,7 @@
         const idToken = liff.getIDToken();
         if (!idToken) throw new Error('ログイン情報を取得できませんでした');
 
-        status.textContent = 'テスト環境で認証を確認しています…';
+        status.textContent = '準備できました。下のボタンで認証テストを実行します。';
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = target.href;
@@ -44,7 +44,15 @@
           form.appendChild(input);
         }
         document.body.appendChild(form);
-        form.submit();
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = '認証テストを実行';
+        button.addEventListener('click', () => {
+          button.disabled = true;
+          status.textContent = 'テスト環境で認証を確認しています…';
+          form.submit();
+        });
+        document.body.appendChild(button);
       } catch (error) {
         status.textContent = `認証テストを開始できませんでした: ${error.message}`;
       }
