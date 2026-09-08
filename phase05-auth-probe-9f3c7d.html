@@ -34,17 +34,10 @@
           action: 'authPing',
           idToken
         };
-        const resultFrame = document.createElement('iframe');
-        resultFrame.name = 'authResult';
-        resultFrame.title = '認証結果';
-        resultFrame.style.width = '100%';
-        resultFrame.style.minHeight = '160px';
-        document.body.appendChild(resultFrame);
-
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = target.href;
-        form.target = resultFrame.name;
+        form.target = '_blank';
         for (const [name, value] of Object.entries(payload)) {
           const input = document.createElement('input');
           input.type = 'hidden';
