@@ -911,7 +911,7 @@ async function gasPost(params, opts) {
   } finally { setNet(false); }
 }
 
-// Phase 0.5 Step 1: 既存の業務APIを切り替えず、新しい本人認証が成立するかだけを観測する。
+// Phase 0.5: LINE本人認証をPOST本文だけで送る。
 // ID tokenはPOST本文だけに入れ、URL・ログ・画面・localStorageには残さない。
 const phase05AuthObservation = { status:'not_started', checkedAt:null };
 
@@ -975,8 +975,6 @@ async function init() {
   try {
     await liff.init({ liffId: LIFF_ID });
     if (!liff.isLoggedIn()) { liff.login(); return; }
-    // 観測のみ。失敗しても現行のlineId経路と画面表示は止めない。
-    observePhase05Auth_();
     const profile = await liff.getProfile();
     lineId = profile.userId;
     await loadStaff();
@@ -986,12 +984,24 @@ async function init() {
 }
 
 async function loadStaff() {
+  phase05AuthObservation.status = 'checking';
+  phase05AuthObservation.checkedAt = null;
+  setNet(true);
   try {
-    const data = await gasGet({ action:'getStaff', lineId });
+    const idToken = (typeof liff.getIDToken === 'function') ? liff.getIDToken() : null;
+    if (!idToken) throw new Error('LINEの認証情報を取得できません。画面を開き直してください。');
+    const data = await gasAuthenticatedPost({ action:'getStaff', idToken:idToken }, { timeoutMs:30000 });
+    phase05AuthObservation.status = data && data.ok ? 'success' : 'rejected';
     if (!data.ok) { showError(data.error); return; }
     staffData = data;
     setupApp();
-  } catch(e) { showError('スタッフ情報エラー: ' + e.message); }
+  } catch(e) {
+    phase05AuthObservation.status = 'request_failed';
+    showError('スタッフ情報エラー: ' + e.message);
+  } finally {
+    phase05AuthObservation.checkedAt = new Date().toISOString();
+    setNet(false);
+  }
 }
 
 function retryLogin() { location.reload(); }

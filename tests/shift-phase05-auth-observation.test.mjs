@@ -14,10 +14,10 @@ function functionBody(name) {
   return SRC.slice(start, next === -1 ? SRC.length : next);
 }
 
-test('C1: LIFFの生ID tokenを取得してauthPingへ渡す', () => {
-  const body = functionBody('observePhase05Auth_');
+test('C1: スタッフ情報取得はLIFFの生ID tokenを認証POSTへ渡す', () => {
+  const body = functionBody('loadStaff');
   assert.match(body, /liff\.getIDToken\(\)/);
-  assert.match(body, /action:'authPing'/);
+  assert.match(body, /action:'getStaff'/);
   assert.match(body, /idToken:idToken/);
 });
 
@@ -35,12 +35,11 @@ test('C3: 認証観測に専用transportを使い既存管理者POSTと分離す
   assert.match(adminBody, /transport:'adminShift'/);
 });
 
-test('C4: 観測失敗でもinitの既存プロフィール取得を継続する', () => {
-  const body = functionBody('init');
-  const observeAt = body.indexOf('observePhase05Auth_();');
-  const profileAt = body.indexOf('await liff.getProfile()');
-  assert.ok(observeAt >= 0 && profileAt > observeAt);
-  assert.doesNotMatch(body, /await\s+observePhase05Auth_/);
+test('C4: 初回スタッフ取得は旧lineId GETへフォールバックしない', () => {
+  const body = functionBody('loadStaff');
+  assert.match(body, /gasAuthenticatedPost/);
+  assert.doesNotMatch(body, /gasGet\s*\(\s*\{\s*action:'getStaff'/);
+  assert.doesNotMatch(body, /lineId\s*:/);
 });
 
 test('C5: 観測結果にtokenや個人情報を公開しない', () => {
