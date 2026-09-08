@@ -34,24 +34,33 @@
           action: 'authPing',
           idToken
         };
+        const resultFrame = document.createElement('iframe');
+        resultFrame.name = 'authResult';
+        resultFrame.title = '認証結果';
+        resultFrame.style.width = '100%';
+        resultFrame.style.minHeight = '160px';
+        document.body.appendChild(resultFrame);
+
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = target.href;
+        form.target = resultFrame.name;
+        for (const [name, value] of Object.entries(payload)) {
+          const input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = name;
+          input.value = value;
+          form.appendChild(input);
+        }
+        document.body.appendChild(form);
+
         const button = document.createElement('button');
         button.type = 'button';
         button.textContent = '認証テストを実行';
-        button.addEventListener('click', async () => {
+        button.addEventListener('click', () => {
           button.disabled = true;
           status.textContent = 'テスト環境で認証を確認しています…';
-          try {
-            const response = await fetch(target.href, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
-              body: new URLSearchParams(payload)
-            });
-            const result = await response.json();
-            status.textContent = `認証結果: ${JSON.stringify(result)}`;
-          } catch (error) {
-            status.textContent = `認証通信に失敗しました: ${error.message}`;
-            button.disabled = false;
-          }
+          form.submit();
         });
         document.body.appendChild(button);
       } catch (error) {
