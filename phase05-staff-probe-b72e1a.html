@@ -27,6 +27,13 @@
 
         const idToken = liff.getIDToken();
         if (!idToken) throw new Error('ログイン情報を取得できませんでした');
+        const claims = liff.getDecodedIDToken();
+        const tokenChecks = {
+          hasSubject: !!(claims && claims.sub),
+          audienceMatches: String(claims && claims.aud) === '2010395925',
+          issuerMatches: !!(claims && claims.iss === 'https://access.line.me'),
+          unexpired: !!(claims && Number(claims.exp) > Math.floor(Date.now() / 1000))
+        };
 
         const form = document.createElement('form');
         form.method = 'POST';
@@ -54,7 +61,7 @@
           form.submit();
         });
         document.body.appendChild(button);
-        status.textContent = '準備できました。下のボタンで認証テストを実行します。';
+        status.textContent = `準備できました。トークン確認: ${JSON.stringify(tokenChecks)}`;
       } catch (error) {
         status.textContent = `認証テストを開始できませんでした: ${error.message}`;
       }
