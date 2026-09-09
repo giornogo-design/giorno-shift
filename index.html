@@ -9,7 +9,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="./assets/icons/favicon-32x32.png">
 <link rel="apple-touch-icon" sizes="180x180" href="./assets/icons/apple-touch-icon.png">
 <link rel="manifest" href="./manifest.webmanifest">
-<meta name="theme-color" content="#6D4AFF">
+<meta name="theme-color" content="#E9681F">
 <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -264,6 +264,80 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .admin-time-dialog-actions{display:flex;gap:8px;justify-content:flex-end}
 .admin-time-select{width:100%;padding:12px;font-size:16px;border:1px solid #ccc;border-radius:8px;background:#fff;min-height:44px}
 .admin-time-select:disabled{background:#f0f0f0;color:#999}
+
+/* 2026-09 オレンジUI確認版：既存機能・DOM・通信処理は変更せず、表示だけを移植 */
+:root {
+  --gio-orange:#e9681f;
+  --gio-orange-dark:#b84712;
+  --gio-orange-bright:#ff9a3c;
+  --gio-orange-soft:#fff0e4;
+  --gio-ink:#2f1f17;
+  --gio-muted:#74665f;
+  --gio-border:#eadfd8;
+}
+body {
+  background:#fff8f2;
+  color:var(--gio-ink);
+  font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans','Yu Gothic UI','Yu Gothic',sans-serif;
+  font-weight:600;
+}
+button,input,select { font-family:inherit; font-weight:700; }
+#loading p,.header .sub,.staff-sub,.empty-state,.legend,.admin-entry-field label { font-weight:650; }
+.spinner { border-top-color:var(--gio-orange); }
+.header {
+  padding:18px 18px 16px;
+  background:linear-gradient(135deg,#e9681f 0%,#f58a32 58%,#ffad5a 100%);
+  box-shadow:0 8px 22px rgba(200,74,12,.22);
+}
+.header h1 { font-size:20px; font-weight:900; letter-spacing:-.025em; }
+.header .sub { color:#fff4ec; font-size:13px; opacity:1; }
+.staff-card,.cal-wrap,.selected-list,.shift-list,.month-select-wrap,.staff-picker {
+  border:1px solid var(--gio-border);
+  border-radius:18px;
+  box-shadow:0 6px 20px rgba(121,55,19,.07);
+}
+.staff-avatar { background:var(--gio-orange); box-shadow:0 5px 12px rgba(217,92,24,.22); }
+.staff-name { font-size:16px; font-weight:900; }
+.store-tab,.subtab,.dmode-btn { min-height:42px; border-color:#e3d2c7; font-weight:800; }
+.store-tab.active,.subtab.active {
+  color:#fff;
+  background:var(--gio-orange);
+  border-color:var(--gio-orange);
+  box-shadow:0 5px 13px rgba(217,92,24,.2);
+}
+.cal-header .month-lbl,.month-select-lbl { font-weight:900; color:var(--gio-ink); }
+.cal-nav { background:var(--gio-orange-soft); color:var(--gio-orange-dark); font-weight:900; }
+.cal-dow,.day-num,.section-title,.sel-date,.shift-date,.staff-row .nm,.staff-pick-name,.cf-name { font-weight:800; }
+.cal-cell.today .day-num { background:var(--gio-orange); }
+.cal-cell.selected,.cal-cell.pending,.cal-cell.picked { background:#fff0e4; }
+.cal-cell.picked,.admin-entry-calendar .cal-cell.selected { box-shadow:inset 0 0 0 2px var(--gio-orange); }
+.batch-toggle { border-color:var(--gio-orange); color:var(--gio-orange-dark); font-weight:850; }
+.batch-toggle.active,#batch-apply,.btn-submit,.btn-confirm,.btn-back {
+  color:#fff;
+  background:var(--gio-orange);
+  box-shadow:0 5px 14px rgba(217,92,24,.22);
+}
+.btn-submit { min-height:48px; border-radius:14px; font-weight:900; }
+.btn-edit { color:var(--gio-orange-dark); border-color:var(--gio-orange); font-weight:800; }
+.time-btn.selected,.part-btn.active,.dow-chip.on {
+  color:var(--gio-orange-dark);
+  border-color:var(--gio-orange);
+  background:var(--gio-orange-soft);
+}
+.time-custom input:focus { border-color:var(--gio-orange); }
+.bottom-nav { min-height:68px; border-color:#eadfd8; box-shadow:0 -5px 18px rgba(91,42,18,.08); }
+.nav-btn { position:relative; color:#776a64; font-size:11px; font-weight:800; }
+.nav-btn.active { color:var(--gio-orange-dark); }
+.nav-btn.active::before { content:""; position:absolute; top:0; left:50%; width:34px; height:3px; transform:translateX(-50%); border-radius:0 0 4px 4px; background:var(--gio-orange-bright); }
+.section-title { color:#5d3b2a; background:#fff5ed; }
+.modal { border-radius:24px 24px 0 0; }
+.modal-title { font-size:19px; font-weight:900; color:var(--gio-ink); }
+.admin-entry-control,.admin-time-select { border-color:#dfcfc4; border-radius:12px; }
+@media (min-width:768px) {
+  body { max-width:720px; margin:0 auto; background:#f3e5dc; box-shadow:0 0 60px rgba(71,29,8,.12); }
+  .bottom-nav { left:50%; right:auto; width:min(720px,100%); transform:translateX(-50%); }
+  .modal { border-radius:22px; }
+}
 </style>
 </head>
 <body>
