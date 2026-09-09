@@ -16,6 +16,15 @@ function slice(startMarker, endMarker) {
   return html.slice(s, e);
 }
 
+// 引数の有無や名前ではなく関数名で本体を取り出し、契約は実際の動作で検証する。
+function sliceFn(name, endMarker) {
+  const m = new RegExp('async function ' + name + '\\s*\\(').exec(html);
+  assert.ok(m, '関数が見つかりません: ' + name);
+  const e = html.indexOf(endMarker, m.index);
+  assert.ok(e > m.index, 'マーカーが見つかりません: ' + endMarker);
+  return html.slice(m.index, e);
+}
+
 // 検証対象のソース範囲。通信層・管理者セッション・成功判定・登録処理。
 const SOURCE = [
   slice('const ADMIN_REQUEST_TIMEOUT_MS', '// 認証（LIFF）'),
@@ -676,9 +685,9 @@ test('29. 登録成功＋再取得が未実施(loaded:false): 不一致とは言
   assert.ok(!/再取得でも一致しました/.test(env.status()), '一致とも誤断定しない: ' + env.status());
 });
 
-test('30. 本番のloadAdminEntryExistingは例外を投げず{ok:false}を返す', async () => {
+test('30. 本番のloadAdminEntryExistingは宣言形に依らず安全契約を守る', async () => {
   // 本番関数そのものを評価し、スタブとの契約一致を保証する（mock乖離の再発防止）。
-  const realSrc = slice('async function loadAdminEntryExisting()', 'async function moveAdminEntryMonth');
+  const realSrc = sliceFn('loadAdminEntryExisting', 'async function moveAdminEntryMonth');
   const env = makeEnv({ responses: [{ kind: 'hang' }] });
   vm.runInContext(realSrc, env.ctx);      // スタブを本番実装で置き換える
   env.ctx.adminEntryLoadGeneration = 0;
@@ -695,6 +704,26 @@ test('30. 本番のloadAdminEntryExistingは例外を投げず{ok:false}を返�
   assert.strictEqual(settled.ok, false, '失敗を ok:false で返す');
   assert.ok(settled.error && settled.error.gasErrorKind === 'TIMEOUT', 'エラー種別を保持: ' + (settled.error && settled.error.gasErrorKind));
   assert.strictEqual(env.ctx.adminEntryExisting.length, 0, '一覧は空のまま');
+
+  // 通常取得は一覧を空にし、成功直後の背景同期だけは局所描画した行を維持する。
+  const keep = makeEnv({ responses: [{ kind: 'hang' }, { kind: 'hang' }] });
+  vm.runInContext(realSrc, keep.ctx);
+  keep.ctx.adminEntryLoadGeneration = 0;
+  keep.ctx.renderAdminEntryExisting = () => {};
+
+  keep.ctx.adminEntryExisting = [{ id: 'LOCAL1' }];
+  keep.ctx.loadAdminEntryExisting({ keepCurrent: true });
+  await flush();
+  assert.deepStrictEqual(keep.ctx.adminEntryExisting.map(s => s.id), ['LOCAL1'], '背景同期で局所描画した行を消さない');
+
+  keep.ctx.adminEntryExisting = [{ id: 'LOCAL1' }];
+  keep.ctx.loadAdminEntryExisting();
+  await flush();
+  assert.strictEqual(keep.ctx.adminEntryExisting.length, 0, '通常取得は従来どおり取得前に空にする');
+
+  keep.clock.tick(30000);
+  await flush();
+  assert.strictEqual(keep.clock.count(), 0, 'タイマーが残らない');
 });
 
 // ---------------------------------------------------------------- T3実機で判明した表示問題
